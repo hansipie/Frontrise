@@ -1,0 +1,1 @@
+{"uuid":"frontrise-test@local","name":"Frontrise test driver","description":"Test only: runs commands written to $FR_CMD.","shell-version":["50"],"session-modes":["user","unlock-dialog"]}

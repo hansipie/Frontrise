@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Frontrise
+Comment=Animated video and shader wallpapers
+Exec=frontrise %u
+Icon=fr.ansicode.frontrise
+Categories=GTK;Utility;
+MimeType=x-scheme-handler/backdrop;
+Keywords=wallpaper;background;live;video;animated;shader;
+StartupNotify=true
+SingleMainWindow=true

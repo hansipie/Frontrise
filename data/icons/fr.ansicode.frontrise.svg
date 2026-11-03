@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e1b4b"/>
+      <stop offset="0.55" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <linearGradient id="sun" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#fb923c"/>
+    </linearGradient>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <clipPath id="frame"><rect x="8" y="12" width="112" height="104" rx="22"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect x="8" y="12" width="112" height="104" fill="url(#sky)"/>
+    <circle cx="64" cy="82" r="30" fill="url(#sun)"/>
+    <g stroke="#fde68a" stroke-width="5" stroke-linecap="round" opacity="0.9">
+      <line x1="64" y1="30" x2="64" y2="40"/>
+      <line x1="30" y1="46" x2="37" y2="53"/>
+      <line x1="98" y1="46" x2="91" y2="53"/>
+    </g>
+    <path d="M8 84 C 34 74, 52 92, 76 84 S 112 76, 120 82 V116 H8 Z" fill="url(#ground)"/>
+    <path d="M8 96 C 36 88, 60 104, 88 96 S 114 90, 120 94 V116 H8 Z" fill="#0f0d2e" opacity="0.8"/>
+  </g>
+  <rect x="8" y="12" width="112" height="104" rx="22" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+</svg>

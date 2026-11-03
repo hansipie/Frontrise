@@ -1,0 +1,37 @@
+window.frontrise-wallpaper,
+window.frontrise-wallpaper > * {
+  background: black;
+}
+
+.frontrise-card picture,
+.frontrise-thumb {
+  border-radius: 12px;
+}
+
+.frontrise-thumb {
+  background: alpha(currentColor, 0.08);
+}
+
+.frontrise-scene-thumb {
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1e3a8a 0%, #6d28d9 55%, #f97316 100%);
+  color: white;
+}
+
+.frontrise-badge {
+  margin: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.8em;
+  font-weight: bold;
+  background: alpha(black, 0.55);
+  color: white;
+}
+
+.frontrise-badge.warning {
+  background: alpha(#c01c28, 0.85);
+}
+
+.frontrise-status {
+  padding: 6px 12px;
+}
