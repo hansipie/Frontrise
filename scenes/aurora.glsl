@@ -1,7 +1,13 @@
 // Frontrise built-in scene: Aurora
 // Slow ribbons of light over a starry night sky.
 
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// Sine-free hash (Dave Hoskins): stays uniform for large coordinates, where
+// sin()-based hashes lose precision and show up as aligned dots.
+float hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
 
 float noise(vec2 p) {
     vec2 i = floor(p);
