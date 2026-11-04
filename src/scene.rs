@@ -113,14 +113,6 @@ impl Scene {
         let uses_audio = ["iSpectrum", "iLevel", "iBass"].iter().any(|u| source.contains(u));
         Rc::new(Self { source, uses_audio, clock: Clock::default() })
     }
-
-    /// A scene frozen at `seconds`: its clock never runs, so a widget made
-    /// from it draws a single frame (library previews).
-    pub fn still(source: String, seconds: f64) -> Rc<Self> {
-        let scene = Self::new(source);
-        scene.clock.base.set(seconds);
-        scene
-    }
 }
 
 struct Program {
@@ -311,4 +303,85 @@ pub fn widget(scene: Rc<Scene>, audio: Rc<Audio>) -> gtk::GLArea {
     });
 
     area
+}
+
+/// Draws one frame of `source` at `seconds` off-screen and returns it as
+/// top-down RGBA bytes (`width * height * 4`). Uses a throwaway GL context,
+/// released before returning: nothing stays alive afterwards. Main thread only.
+pub fn render_still(source: &str, seconds: f64, width: i32, height: i32) -> Result<Vec<u8>, String> {
+    let display = gtk::gdk::Display::default().ok_or("no display")?;
+    let ctx = display.create_gl_context().map_err(|e| e.to_string())?;
+    ctx.realize().map_err(|e| e.to_string())?;
+    ctx.make_current();
+    let es = ctx.uses_es();
+    let gl = Rc::new(unsafe { glow::Context::from_loader_function(proc_address) });
+    let result = unsafe { draw_still(&gl, source, es, seconds, width, height) };
+    gtk::gdk::GLContext::clear_current();
+    result
+}
+
+unsafe fn draw_still(
+    gl: &Rc<glow::Context>,
+    source: &str,
+    es: bool,
+    seconds: f64,
+    width: i32,
+    height: i32,
+) -> Result<Vec<u8>, String> {
+    let p = link(gl.clone(), source, es).or_else(|_| link(gl.clone(), FALLBACK, es))?;
+    let texture = gl.create_texture()?;
+    gl.bind_texture(glow::TEXTURE_2D, Some(texture));
+    gl.tex_image_2d(
+        glow::TEXTURE_2D,
+        0,
+        glow::RGBA8 as i32,
+        width,
+        height,
+        0,
+        glow::RGBA,
+        glow::UNSIGNED_BYTE,
+        glow::PixelUnpackData::Slice(None),
+    );
+    let fbo = gl.create_framebuffer()?;
+    gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+    gl.framebuffer_texture_2d(glow::FRAMEBUFFER, glow::COLOR_ATTACHMENT0, glow::TEXTURE_2D, Some(texture), 0);
+
+    let mut pixels = vec![0u8; (width * height * 4) as usize];
+    let complete = gl.check_framebuffer_status(glow::FRAMEBUFFER) == glow::FRAMEBUFFER_COMPLETE;
+    if complete {
+        gl.viewport(0, 0, width, height);
+        gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
+        gl.use_program(Some(p.program));
+        gl.uniform_1_f32(p.u_time.as_ref(), seconds as f32);
+        gl.uniform_1_f32(p.u_delta.as_ref(), 0.0);
+        gl.uniform_1_i32(p.u_frame.as_ref(), 0);
+        gl.uniform_3_f32(p.u_res.as_ref(), width as f32, height as f32, 1.0);
+        gl.uniform_4_f32(p.u_mouse.as_ref(), 0.0, 0.0, 0.0, 0.0);
+        gl.uniform_1_f32_slice(p.u_spectrum.as_ref(), &[0.0; BANDS]);
+        gl.uniform_1_f32(p.u_level.as_ref(), 0.0);
+        gl.uniform_1_f32(p.u_bass.as_ref(), 0.0);
+        gl.bind_vertex_array(Some(p.vao));
+        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+        gl.bind_vertex_array(None);
+        gl.use_program(None);
+        gl.read_pixels(0, 0, width, height, glow::RGBA, glow::UNSIGNED_BYTE, glow::PixelPackData::Slice(Some(&mut pixels)));
+    }
+
+    gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+    gl.delete_framebuffer(fbo);
+    gl.delete_texture(texture);
+    gl.delete_program(p.program);
+    gl.delete_vertex_array(p.vao);
+    if !complete {
+        return Err("off-screen framebuffer unsupported".into());
+    }
+
+    // GL rows run bottom-up; images are top-down.
+    let stride = (width * 4) as usize;
+    let mut flipped = Vec::with_capacity(pixels.len());
+    for row in pixels.chunks_exact(stride).rev() {
+        flipped.extend_from_slice(row);
+    }
+    Ok(flipped)
 }

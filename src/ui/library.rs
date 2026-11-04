@@ -1,25 +1,47 @@
 //! Library page: a grid of wallpapers (videos and scenes).
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use adw::prelude::*;
-use gtk::{gdk, gio, glib};
+use gtk::{gio, glib};
 
 use crate::app::Ctx;
 use crate::config::{Item, Kind};
 use crate::engine;
-use crate::audio::Audio;
-use crate::scene::{self, Scene};
 use crate::thumbs;
 
 /// Moment of the animation shown in a scene's library preview.
 const SCENE_PREVIEW_TIME: f64 = 8.0;
 
+/// How long to leave a failed thumbnail alone before trying it again.
+const RETRY_AFTER: Duration = Duration::from_secs(30);
+
 thread_local! {
-    /// Thumbnails being generated or that failed, so rebuilds don't retry.
+    /// Thumbnails being generated, so rebuilds don't start them twice.
     static PENDING: RefCell<HashSet<String>> = RefCell::default();
+    /// Thumbnails that failed and when, so rebuilds don't retry in a loop.
+    static FAILED: RefCell<HashMap<String, Instant>> = RefCell::default();
+}
+
+/// Claims the right to generate `id`'s thumbnail now: not already running,
+/// and not failed within `RETRY_AFTER`.
+fn begin_generation(id: &str) -> bool {
+    let cooling = FAILED.with(|f| f.borrow().get(id).is_some_and(|t| t.elapsed() < RETRY_AFTER));
+    !cooling && PENDING.with(|p| p.borrow_mut().insert(id.to_owned()))
+}
+
+fn end_generation(id: &str, ok: bool) {
+    PENDING.with(|p| p.borrow_mut().remove(id));
+    FAILED.with(|f| {
+        if ok {
+            f.borrow_mut().remove(id);
+        } else {
+            f.borrow_mut().insert(id.to_owned(), Instant::now());
+        }
+    });
 }
 
 pub fn page(ctx: &Rc<Ctx>) -> gtk::Widget {
@@ -212,47 +234,6 @@ fn card(
 }
 
 fn thumbnail(item: &Item) -> gtk::Widget {
-    if item.kind == Kind::Scene {
-        // Same size, corners and framing as video thumbnails: a real frame
-        // of the shader, drawn once.
-        if let Ok(source) = item.scene_source() {
-            let area = scene::widget(Scene::still(source, SCENE_PREVIEW_TIME), Audio::new());
-            // The card may be taller than 16:9 (the grid gives every card the
-            // height of the tallest one), so the shader must fill whatever
-            // it is given. An invisible 16:9 picture drives the height
-            // exactly as a video thumbnail does; the shader covers it.
-            let blank = gdk::MemoryTexture::new(
-                16,
-                9,
-                gdk::MemoryFormat::R8g8b8a8,
-                &glib::Bytes::from_owned(vec![0u8; 16 * 9 * 4]),
-                16 * 4,
-            );
-            let sizer = gtk::Picture::builder()
-                .paintable(&blank)
-                .content_fit(gtk::ContentFit::Cover)
-                .can_shrink(true)
-                .width_request(256)
-                .height_request(144)
-                .build();
-            area.set_hexpand(true);
-            area.set_vexpand(true);
-            let frame = gtk::Overlay::builder()
-                .overflow(gtk::Overflow::Hidden)
-                .css_classes(["frontrise-thumb"])
-                .child(&sizer)
-                .build();
-            frame.add_overlay(&area);
-            return frame.upcast();
-        }
-        let b = gtk::Box::builder()
-            .css_classes(["frontrise-scene-thumb"])
-            .width_request(256)
-            .height_request(144)
-            .build();
-        return b.upcast();
-    }
-
     let picture = gtk::Picture::builder()
         .content_fit(gtk::ContentFit::Cover)
         .can_shrink(true)
@@ -261,36 +242,84 @@ fn thumbnail(item: &Item) -> gtk::Widget {
         .css_classes(["frontrise-thumb"])
         .build();
     let out = thumbs::path_for(&item.id);
-    if out.exists() {
-        picture.set_filename(Some(&out));
+    if item.kind == Kind::Scene {
+        scene_thumbnail(item, &picture, &out);
         return picture.upcast();
+    }
+    // A stale thumbnail stays on screen until its replacement is ready.
+    let cached = out.exists();
+    if cached {
+        picture.set_filename(Some(&out));
+        if thumbs::video_is_fresh(&out, item.path.as_deref()) {
+            return picture.upcast();
+        }
     }
     let Some(video) = item.path.clone().filter(|p| p.exists()) else {
         return picture.upcast();
     };
     let id = item.id.clone();
-    let first = PENDING.with(|p| p.borrow_mut().insert(id.clone()));
-    if first {
+    if begin_generation(&id) {
         let weak = picture.downgrade();
         glib::spawn_future_local(async move {
             let target = out.clone();
             let result = gio::spawn_blocking(move || thumbs::generate(&video, &target)).await;
             match result {
                 Ok(Ok(())) => {
-                    PENDING.with(|p| p.borrow_mut().remove(&id));
+                    end_generation(&id, true);
                     if let Some(picture) = weak.upgrade() {
+                        // Reload: the file name is unchanged.
+                        picture.set_filename(None::<&std::path::Path>);
                         picture.set_filename(Some(&out));
                     } else {
                         // The grid was rebuilt meanwhile: refresh it.
                         crate::app::ctx().state.notify_ui();
                     }
                 }
-                Ok(Err(e)) => eprintln!("frontrise: no thumbnail for {id}: {e}"),
-                Err(_) => eprintln!("frontrise: thumbnail worker panicked for {id}"),
+                Ok(Err(e)) => {
+                    end_generation(&id, false);
+                    eprintln!("frontrise: no thumbnail for {id}: {e}");
+                }
+                Err(_) => {
+                    end_generation(&id, false);
+                    eprintln!("frontrise: thumbnail worker panicked for {id}");
+                }
             }
         });
     }
     picture.upcast()
+}
+
+/// Scene previews are one frame of the shader, rendered once off-screen and
+/// cached as a PNG like video thumbnails: no GL surface stays in the grid.
+fn scene_thumbnail(item: &Item, picture: &gtk::Picture, out: &std::path::Path) {
+    if out.exists() {
+        picture.set_filename(Some(out));
+        if thumbs::scene_is_fresh(out, item.path.as_deref()) {
+            return;
+        }
+    }
+    let Ok(source) = item.scene_source() else { return };
+    let id = item.id.clone();
+    if !begin_generation(&id) {
+        return;
+    }
+    let weak = picture.downgrade();
+    let out = out.to_owned();
+    // Deferred so the grid shows up first; GL work must stay on this thread.
+    glib::idle_add_local_once(move || {
+        let result = thumbs::generate_scene(&source, SCENE_PREVIEW_TIME, &out);
+        end_generation(&id, result.is_ok());
+        match result {
+            Ok(()) => match weak.upgrade() {
+                Some(picture) => {
+                    picture.set_filename(None::<&std::path::Path>);
+                    picture.set_filename(Some(&out));
+                }
+                None => crate::app::ctx().state.notify_ui(),
+            },
+            Err(e) => eprintln!("frontrise: no preview for scene {id}: {e}"),
+        }
+    });
 }
 
 fn menu(item: &Item, playlists: &[crate::config::Playlist], monitors: &[engine::MonitorInfo]) -> gio::Menu {

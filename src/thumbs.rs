@@ -58,29 +58,65 @@ pub fn generate(video: &Path, out: &Path) -> Result<(), String> {
             return Err("unexpected frame layout".into());
         }
 
-        if let Some(dir) = out.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-        }
-        let tmp = out.with_extension("png.tmp");
-        let file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-        let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width as u32, height as u32);
-        encoder.set_color(png::ColorType::Rgba);
-        encoder.set_depth(png::BitDepth::Eight);
-        let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
         let mut pixels = Vec::with_capacity(width * height * 4);
         for row in 0..height {
             let start = row * stride;
             pixels.extend_from_slice(&data[start..start + width * 4]);
         }
-        // Thumbnails are opaque.
-        for px in pixels.chunks_exact_mut(4) {
-            px[3] = 255;
-        }
-        writer.write_image_data(&pixels).map_err(|e| e.to_string())?;
-        writer.finish().map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, out).map_err(|e| e.to_string())
+        write_png(out, width as u32, height as u32, pixels)
     })();
 
     let _ = pipeline.set_state(gst::State::Null);
     result
+}
+
+/// Writes opaque RGBA pixels (`width * height * 4`) as a PNG, atomically.
+fn write_png(out: &Path, width: u32, height: u32, mut pixels: Vec<u8>) -> Result<(), String> {
+    if let Some(dir) = out.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let tmp = out.with_extension("png.tmp");
+    let file = std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().map_err(|e| e.to_string())?;
+    // Thumbnails are opaque.
+    for px in pixels.chunks_exact_mut(4) {
+        px[3] = 255;
+    }
+    writer.write_image_data(&pixels).map_err(|e| e.to_string())?;
+    writer.finish().map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, out).map_err(|e| e.to_string())
+}
+
+/// Renders a frame of a scene (`seconds` into the animation) to a PNG.
+/// Main thread only: it needs a GL context.
+pub fn generate_scene(source: &str, seconds: f64, out: &Path) -> Result<(), String> {
+    const W: i32 = 384;
+    const H: i32 = 216;
+    let pixels = crate::scene::render_still(source, seconds, W, H)?;
+    write_png(out, W as u32, H as u32, pixels)
+}
+
+/// True if the cached scene preview `out` is newer than the scene file (when
+/// it has one) and than this executable (built-in scenes ship inside it).
+pub fn scene_is_fresh(out: &Path, scene_file: Option<&Path>) -> bool {
+    let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    let Some(cached) = mtime(out) else { return false };
+    let newest = [scene_file.and_then(mtime), std::env::current_exe().ok().and_then(|e| mtime(&e))]
+        .into_iter()
+        .flatten()
+        .max();
+    newest.is_none_or(|n| cached >= n)
+}
+
+/// True if the cached video thumbnail `out` is not older than the video.
+pub fn video_is_fresh(out: &Path, video: Option<&Path>) -> bool {
+    let mtime = |p: &Path| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+    match (mtime(out), video.and_then(mtime)) {
+        (Some(cached), Some(source)) => cached >= source,
+        (Some(_), None) => true, // video missing: keep what we have
+        (None, _) => false,
+    }
 }
