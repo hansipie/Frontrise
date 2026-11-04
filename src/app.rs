@@ -38,8 +38,6 @@ Commands:
   --background         Start without opening the window (used at login)
   show [PAGE]          Open the window (PAGE: library, playlists, displays)
   set FILE             Import FILE and play it on every display
-  backdrop://wallpaper/ID
-                       Play the library wallpaper linked to that Backdrop ID
   pause | resume       Pause or resume all wallpapers
   toggle               Toggle pause
   next | previous      Skip to the next or previous playlist item
@@ -64,7 +62,6 @@ pub fn run() -> glib::ExitCode {
             return glib::ExitCode::SUCCESS;
         }
         None | Some("--background" | "show" | "set") => {}
-        Some(link) if crate::config::parse_backdrop_link(link).is_some() => {}
         Some("pause" | "resume" | "toggle" | "next" | "previous" | "quit") => {
             // Control commands only make sense for a running instance.
             if app.register(gio::Cancellable::NONE).is_ok() && !app.is_remote() {
@@ -215,9 +212,6 @@ fn command_line(_app: &adw::Application, cl: &gio::ApplicationCommandLine) -> gl
             }
         }
         Some("--help" | "-h" | "help") => cl.print_literal(USAGE),
-        Some(link) if crate::config::parse_backdrop_link(link).is_some() => {
-            ui::open_backdrop_link(&ctx, link);
-        }
         Some(other) => {
             cl.printerr_literal(&format!("frontrise: unknown command “{other}”\n\n{USAGE}"));
             return glib::ExitCode::FAILURE;

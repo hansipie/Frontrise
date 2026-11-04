@@ -32,10 +32,6 @@ pub struct Item {
     pub builtin: Option<String>,
     #[serde(default)]
     pub favorite: bool,
-    /// Backdrop catalog identifier this item stands for (uppercase UUID),
-    /// so `backdrop://wallpaper/<id>` links open it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backdrop_id: Option<String>,
 }
 
 impl Item {
@@ -200,7 +196,6 @@ impl Store {
                         path: None,
                         builtin: Some(key.to_owned()),
                         favorite: false,
-                        backdrop_id: None,
                     },
                 );
             }
@@ -226,25 +221,6 @@ impl Store {
 
     pub fn item_mut(&mut self, id: &str) -> Option<&mut Item> {
         self.library.iter_mut().find(|i| i.id == id)
-    }
-
-    pub fn item_for_backdrop_id(&self, backdrop_id: &str) -> Option<&Item> {
-        self.library.iter().find(|i| i.backdrop_id.as_deref() == Some(backdrop_id))
-    }
-
-    /// Links `item_id` to a Backdrop identifier (or unlinks with `None`).
-    /// An identifier belongs to one item at most.
-    pub fn set_backdrop_id(&mut self, item_id: &str, backdrop_id: Option<String>) {
-        if let Some(bid) = &backdrop_id {
-            for i in &mut self.library {
-                if i.backdrop_id.as_ref() == Some(bid) {
-                    i.backdrop_id = None;
-                }
-            }
-        }
-        if let Some(i) = self.item_mut(item_id) {
-            i.backdrop_id = backdrop_id;
-        }
     }
 
     pub fn playlist(&self, id: &str) -> Option<&Playlist> {
@@ -278,7 +254,6 @@ impl Store {
             path: Some(path),
             builtin: None,
             favorite: false,
-            backdrop_id: None,
         });
         Some(id)
     }
@@ -315,76 +290,6 @@ impl Store {
         for c in rest {
             self.display_mut(c).source = Source::SameAs(first.clone());
         }
-    }
-}
-
-/// A `backdrop://` link.
-#[derive(Debug, PartialEq, Eq)]
-pub enum BackdropLink {
-    Wallpaper(String),
-    /// collection, creator, profile…: catalog pages Frontrise can't show.
-    Other(String),
-}
-
-fn is_uuid(s: &str) -> bool {
-    s.len() == 36
-        && s.char_indices().all(|(i, c)| match i {
-            8 | 13 | 18 | 23 => c == '-',
-            _ => c.is_ascii_hexdigit(),
-        })
-}
-
-/// Parses `backdrop://wallpaper/<UUID>` (also with a trailing slash, query or
-/// fragment). Returns `None` for anything that isn't a backdrop link.
-pub fn parse_backdrop_link(link: &str) -> Option<BackdropLink> {
-    let link = link.trim();
-    let rest = link.get(..11).filter(|p| p.eq_ignore_ascii_case("backdrop://")).map(|_| &link[11..])?;
-    let rest = rest.split(['?', '#']).next().unwrap_or("");
-    let mut parts = rest.split('/').filter(|p| !p.is_empty());
-    let kind = parts.next().unwrap_or("").to_ascii_lowercase();
-    let id = parts.next().unwrap_or("");
-    if kind == "wallpaper" && is_uuid(id) {
-        Some(BackdropLink::Wallpaper(id.to_ascii_uppercase()))
-    } else {
-        Some(BackdropLink::Other(kind))
-    }
-}
-
-/// Accepts a bare UUID or a `backdrop://wallpaper/<UUID>` link.
-pub fn backdrop_id_from_input(input: &str) -> Option<String> {
-    let input = input.trim();
-    if is_uuid(input) {
-        return Some(input.to_ascii_uppercase());
-    }
-    match parse_backdrop_link(input) {
-        Some(BackdropLink::Wallpaper(id)) => Some(id),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_wallpaper_links() {
-        let id = "F7A4D5BB-1A0D-424B-AF58-F7BAE32A3D75";
-        for link in [
-            "backdrop://wallpaper/F7A4D5BB-1A0D-424B-AF58-F7BAE32A3D75",
-            "BACKDROP://wallpaper/f7a4d5bb-1a0d-424b-af58-f7bae32a3d75/",
-            "backdrop://wallpaper/F7A4D5BB-1A0D-424B-AF58-F7BAE32A3D75?ref=share",
-        ] {
-            assert_eq!(parse_backdrop_link(link), Some(BackdropLink::Wallpaper(id.into())), "{link}");
-        }
-        assert_eq!(backdrop_id_from_input(id), Some(id.into()));
-    }
-
-    #[test]
-    fn rejects_other_links() {
-        assert_eq!(parse_backdrop_link("frontrise://x"), None);
-        assert_eq!(parse_backdrop_link("backdrop://collection/abc"), Some(BackdropLink::Other("collection".into())));
-        assert_eq!(parse_backdrop_link("backdrop://wallpaper/not-a-uuid"), Some(BackdropLink::Other("wallpaper".into())));
-        assert_eq!(backdrop_id_from_input("hello"), None);
     }
 }
 

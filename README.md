@@ -18,26 +18,6 @@ Animated video and shader wallpapers for GNOME (Shell 50, Wayland).
 - **Automatic pause**: on battery, in Power Saver, while an app is fullscreen.
 - **Top bar menu**, start at login, command line control.
 
-## How it works
-
-`frontrise` (Rust, GTK 4 + libadwaita, GStreamer) renders each display's
-wallpaper in a window titled `FrontriseWallpaper:<x>,<y>:<connector>`.
-The GNOME Shell extension (`extension/`, uuid `frontrise@ansicode.fr`):
-
-- keeps these windows minimized and hides them from Alt+Tab, the Overview,
-  the dash and the running-apps list;
-- paints a live clone of them inside GNOME's own background actors
-  (desktop, Overview workspaces, lock screen);
-- reports fullscreen apps to the app and adds the top bar menu.
-
-The app and extension talk over D-Bus (`org.gtk.Actions` on
-`fr.ansicode.frontrise`). Without the extension, the app creates no wallpaper
-window and shows a banner instead.
-
-Data: `~/.config/frontrise/config.json` (library, playlists, displays,
-settings — the extension reads `settings` from it), thumbnails in
-`~/.cache/frontrise/thumbs`. Videos are referenced, not copied.
-
 ## Prerequisites
 
 To run Frontrise:
@@ -56,11 +36,13 @@ To build from source, also:
 - the stable [Rust](https://rustup.rs) toolchain (`cargo`).
 
 Exact package names per distribution are listed in
-[Install on a traditional distribution](#install-on-a-traditional-distribution).
+[Traditional distribution](#traditional-distribution).
 
-## Build and install
+## Installation
 
-On Fedora Atomic (Silverblue, Bazzite…), build in a distrobox:
+### Fedora Atomic (Silverblue, Bazzite…)
+
+Build in a distrobox:
 
     distrobox create --name frontrise-dev --image registry.fedoraproject.org/fedora:44
     distrobox enter frontrise-dev -- sudo dnf install -y gcc pkgconf-pkg-config \
@@ -74,14 +56,14 @@ GNOME loads a new extension at the next login: log out and back in once, then
 `gnome-extensions enable frontrise@ansicode.fr`.
 `./install.sh --uninstall` removes everything but your settings.
 
-## Install on a traditional distribution
+### Traditional distribution
 
 On a regular (non-immutable) distribution, install the build dependencies
 with the system package manager and build directly on the host: no distrobox
 is needed. Everything installs for the current user, without root (only the
 package installation needs `sudo`).
 
-### 1. Check your GNOME version
+#### 1. Check your GNOME version
 
     gnome-shell --version
 
@@ -93,7 +75,7 @@ GNOME 51 and are not supported yet. A Wayland session is required.
 
 The app needs GTK ≥ 4.14, libadwaita ≥ 1.6, GLib ≥ 2.80 and GStreamer 1.x.
 
-### 2. Install the build dependencies
+#### 2. Install the build dependencies
 
 Fedora / RHEL family:
 
@@ -130,7 +112,7 @@ present on any GNOME desktop. `gnome-extensions`, `update-desktop-database`
 and `xdg-mime` are used by `install.sh` and are normally already installed with
 GNOME.
 
-### 3. Install Rust
+#### 3. Install Rust
 
 Install the stable toolchain with [rustup](https://rustup.rs) (the
 `rustup` package of your distribution works too):
@@ -138,7 +120,7 @@ Install the stable toolchain with [rustup](https://rustup.rs) (the
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     source "$HOME/.cargo/env"
 
-### 4. Build and install
+#### 4. Build and install
 
 From the root of the source tree:
 
@@ -150,14 +132,13 @@ on the host, then installs:
 - the binary in `~/.local/bin/frontrise`;
 - the desktop file and icon in `~/.local/share/applications` and
   `~/.local/share/icons`;
-- the extension in `~/.local/share/gnome-shell/extensions/frontrise@ansicode.fr`;
-- the `backdrop://` link handler.
+- the extension in `~/.local/share/gnome-shell/extensions/frontrise@ansicode.fr`.
 
 To reinstall an already built `target/release/frontrise`, use
 `./install.sh --no-build`. Make sure `~/.local/bin` is in your `PATH` to use
 the `frontrise` command (the app grid entry works either way).
 
-### 5. Enable the extension
+#### 5. Enable the extension
 
 GNOME Shell on Wayland only discovers a new extension at login. After the
 first install, log out, log back in, then run:
@@ -167,14 +148,14 @@ first install, log out, log back in, then run:
 (or toggle *Frontrise* in the Extensions app). On later installs,
 `install.sh` enables it by itself.
 
-### 6. Start Frontrise
+#### 6. Start Frontrise
 
 Open *Frontrise* from the app grid, or run `frontrise`. To play your
 wallpapers at every login, turn on *Start at login* in the preferences
 (System group): it writes `~/.config/autostart/fr.ansicode.frontrise.desktop`,
 which runs `frontrise --background`.
 
-### Uninstall
+#### Uninstall
 
     ./install.sh --uninstall
 
@@ -183,33 +164,17 @@ file, icon, autostart entry and extension. Your library and settings stay in
 `~/.config/frontrise` (delete it and `~/.cache/frontrise` to remove them too).
 The build dependencies are left in place.
 
-## Command line
+## Usage
+
+### Command line
 
     frontrise                 open the window
     frontrise --background    start without a window (used at login)
     frontrise show displays   open a page (library, playlists, displays)
     frontrise set FILE        import FILE and play it on every display
-    frontrise backdrop://wallpaper/ID   play the video linked to that ID
     frontrise pause|resume|toggle|next|previous|quit
 
-## backdrop:// links
-
-Frontrise registers itself for `backdrop://` links. A
-`backdrop://wallpaper/<UUID>` link plays the library video linked to that
-ID (⋯ → Link to Backdrop… on a card). For an unknown ID, Frontrise offers to
-choose a video file and link it. The Backdrop catalog itself is never
-contacted: links only resolve to your own files. Other `backdrop://` links
-(collections, creators, profiles) are not supported.
-
-## End-to-end tests
-
-    tests/e2e/launch.sh /tmp/frontrise-e2e tests/e2e/scenarios/backdrop-links.sh
-
-Runs a headless, isolated GNOME Shell 50 (private D-Bus, dconf and XDG
-dirs) with the extension and a test driver; results and screenshots land in
-the work directory.
-
-## Writing scenes
+### Writing scenes
 
 A scene is a `.glsl` / `.frag` file defining
 `void mainImage(out vec4 fragColor, in vec2 fragCoord)`.
@@ -218,9 +183,39 @@ Uniforms: `iTime`, `iTimeDelta`, `iFrame`, `iResolution`, `iMouse` (always 0),
 not supported. A scene that fails to compile shows a plain gradient and the
 error is printed on stderr.
 
+## How it works
+
+`frontrise` (Rust, GTK 4 + libadwaita, GStreamer) renders each display's
+wallpaper in a window titled `FrontriseWallpaper:<x>,<y>:<connector>`.
+The GNOME Shell extension (`extension/`, uuid `frontrise@ansicode.fr`):
+
+- keeps these windows minimized and hides them from Alt+Tab, the Overview,
+  the dash and the running-apps list;
+- paints a live clone of them inside GNOME's own background actors
+  (desktop, Overview workspaces, lock screen);
+- reports fullscreen apps to the app and adds the top bar menu.
+
+The app and extension talk over D-Bus (`org.gtk.Actions` on
+`fr.ansicode.frontrise`). Without the extension, the app creates no wallpaper
+window and shows a banner instead.
+
+Data: `~/.config/frontrise/config.json` (library, playlists, displays,
+settings — the extension reads `settings` from it), thumbnails in
+`~/.cache/frontrise/thumbs`. Videos are referenced, not copied.
+
 ## Limitations
 
 - GNOME Shell 50 only (tested in a nested headless GNOME Shell 50.6).
 - No playback speed control.
 - Wallpapers do not receive clicks (GNOME gives no input to the background).
 - The renderer windows are recognised by their title.
+
+## Development
+
+### End-to-end tests
+
+    tests/e2e/launch.sh /tmp/frontrise-e2e tests/e2e/scenarios/<scenario>.sh
+
+Runs a headless, isolated GNOME Shell 50 (private D-Bus, dconf and XDG
+dirs) with the extension and a test driver; results and screenshots land in
+the work directory.

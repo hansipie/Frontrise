@@ -39,9 +39,7 @@ mkdir -p "$EXT_DIR/icons"
 install -m644 extension/extension.js extension/metadata.json "$EXT_DIR/"
 install -m644 extension/icons/frontrise-symbolic.svg "$EXT_DIR/icons/"
 
-# Open backdrop:// links with Frontrise.
 update-desktop-database "$DATA/applications" 2>/dev/null || true
-xdg-mime default "$APP_ID.desktop" x-scheme-handler/backdrop 2>/dev/null || true
 
 if gnome-extensions info "$UUID" >/dev/null 2>&1; then
     gnome-extensions enable "$UUID" && echo "Extension enabled."

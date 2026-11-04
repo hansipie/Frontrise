@@ -12,7 +12,7 @@ use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 
 use crate::app::Ctx;
-use crate::config::{self, BackdropLink, Source};
+use crate::config::Source;
 use crate::engine;
 use crate::shellext::{self, ShellStatus};
 use crate::APP_ID;
@@ -140,108 +140,6 @@ fn import_dialog(ctx: &Rc<Ctx>) {
     });
 }
 
-fn video_filter() -> gio::ListStore {
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some("Videos"));
-    filter.add_mime_type("video/*");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    filters
-}
-
-/// Lets the user pick a video, imports it, links it to `backdrop_id` and
-/// plays it everywhere.
-fn choose_video_for_backdrop(ctx: &Rc<Ctx>, backdrop_id: String) {
-    let dialog = gtk::FileDialog::builder()
-        .title("Choose the Video for This Wallpaper")
-        .filters(&video_filter())
-        .modal(true)
-        .build();
-    let ctx = ctx.clone();
-    glib::spawn_future_local(async move {
-        let parent = parent(&ctx);
-        let Ok(file) = dialog.open_future(parent.as_ref()).await else { return };
-        let Some(path) = file.path() else { return };
-        let conns = connectors();
-        let mut title = None;
-        ctx.state.modify(|s| {
-            if let Some(id) = s.import(&path) {
-                s.set_backdrop_id(&id, Some(backdrop_id.clone()));
-                s.apply_everywhere(&conns, Source::Item(id.clone()));
-                title = s.item(&id).map(|i| i.title.clone());
-            }
-        });
-        match title {
-            Some(t) => toast(&ctx, &format!("“{t}” is linked and now on every display")),
-            None => toast(&ctx, "That file isn't a video Frontrise can play."),
-        }
-    });
-}
-
-/// Opens a `backdrop://` link: plays the library item linked to it, or
-/// offers to link a video file. Nothing is fetched from the network.
-pub fn open_backdrop_link(ctx: &Rc<Ctx>, link: &str) {
-    present(ctx, Some("library"));
-    let id = match config::parse_backdrop_link(link) {
-        Some(BackdropLink::Wallpaper(id)) => id,
-        Some(BackdropLink::Other(kind)) => {
-            let what = if kind.is_empty() { "This Backdrop link".to_owned() } else { format!("Backdrop “{kind}” links") };
-            let dialog = adw::AlertDialog::new(
-                Some("Link Not Supported"),
-                Some(&format!(
-                    "{what} can't be opened. Frontrise opens backdrop://wallpaper/… links \
-                     that you've linked to a video in your library."
-                )),
-            );
-            dialog.add_response("ok", "OK");
-            dialog.present(parent(ctx).as_ref());
-            return;
-        }
-        None => return,
-    };
-
-    let found = ctx
-        .state
-        .store
-        .borrow()
-        .item_for_backdrop_id(&id)
-        .map(|i| (i.id.clone(), i.title.clone(), i.is_available()));
-    let (heading, body) = match found {
-        Some((item_id, title, true)) => {
-            let conns = connectors();
-            ctx.state.modify(|s| s.apply_everywhere(&conns, Source::Item(item_id)));
-            toast(ctx, &format!("“{title}” is now on every display"));
-            return;
-        }
-        Some((_, title, false)) => (
-            "Video File Missing".to_owned(),
-            format!("“{title}” is linked to this Backdrop wallpaper, but its video file is gone. Choose the video again to relink it."),
-        ),
-        None => (
-            "Wallpaper Not in Your Library".to_owned(),
-            format!(
-                "This link points to a wallpaper from the Backdrop catalog ({id}). \
-                 Frontrise can't download from that catalog.\n\n\
-                 If you have this wallpaper as a video file, choose it to link it: \
-                 the next time, this link will play it directly."
-            ),
-        ),
-    };
-    let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
-    dialog.add_response("cancel", "Cancel");
-    dialog.add_response("choose", "Choose Video…");
-    dialog.set_response_appearance("choose", adw::ResponseAppearance::Suggested);
-    dialog.set_default_response(Some("choose"));
-    dialog.set_close_response("cancel");
-    let c = ctx.clone();
-    dialog.connect_response(None, move |_, response| {
-        if response == "choose" {
-            choose_video_for_backdrop(&c, id.clone());
-        }
-    });
-    dialog.present(parent(ctx).as_ref());
-}
-
 /// Asks for a name, then calls `done` with it.
 pub fn ask_name(ctx: &Ctx, heading: &str, initial: &str, confirm: &str, done: impl Fn(String) + 'static) {
     let entry = gtk::Entry::builder().text(initial).activates_default(true).build();
@@ -358,32 +256,6 @@ fn add_window_actions(ctx: &Rc<Ctx>, window: &adw::ApplicationWindow) {
                 c2.state.modify(|s| s.remove_item(&id));
             },
         );
-    });
-    let c = ctx.clone();
-    string_action(window, "link-backdrop", move |item_id| {
-        let current = c
-            .state
-            .store
-            .borrow()
-            .item(&item_id)
-            .and_then(|i| i.backdrop_id.clone())
-            .map(|id| format!("backdrop://wallpaper/{id}"))
-            .unwrap_or_default();
-        let c2 = c.clone();
-        ask_name(&c, "Paste a Backdrop Wallpaper Link", &current, "Link", move |text| {
-            match config::backdrop_id_from_input(&text) {
-                Some(bid) => {
-                    c2.state.modify(|s| s.set_backdrop_id(&item_id, Some(bid)));
-                    toast(&c2, "Linked: backdrop:// links to this wallpaper now open it");
-                }
-                None => toast(&c2, "That isn't a backdrop://wallpaper/… link or wallpaper ID."),
-            }
-        });
-    });
-    let c = ctx.clone();
-    string_action(window, "unlink-backdrop", move |item_id| {
-        c.state.modify(|s| s.set_backdrop_id(&item_id, None));
-        toast(&c, "Backdrop link removed");
     });
     let import = gio::SimpleAction::new("import", None);
     let c = ctx.clone();

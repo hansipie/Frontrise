@@ -5,12 +5,17 @@ use std::collections::HashSet;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gdk, gio, glib};
 
 use crate::app::Ctx;
 use crate::config::{Item, Kind};
 use crate::engine;
+use crate::audio::Audio;
+use crate::scene::{self, Scene};
 use crate::thumbs;
+
+/// Moment of the animation shown in a scene's library preview.
+const SCENE_PREVIEW_TIME: f64 = 8.0;
 
 thread_local! {
     /// Thumbnails being generated or that failed, so rebuilds don't retry.
@@ -154,10 +159,6 @@ fn card(
         overlay.add_overlay(&badge("Missing file", true));
     } else if item.kind == Kind::Scene {
         overlay.add_overlay(&badge("Scene", false));
-    } else if let Some(id) = &item.backdrop_id {
-        let b = badge("Backdrop", false);
-        b.set_tooltip_text(Some(&format!("backdrop://wallpaper/{id}")));
-        overlay.add_overlay(&b);
     }
 
     let title = gtk::Label::builder()
@@ -212,19 +213,43 @@ fn card(
 
 fn thumbnail(item: &Item) -> gtk::Widget {
     if item.kind == Kind::Scene {
-        let icon = gtk::Image::builder()
-            .icon_name("weather-clear-night-symbolic")
-            .pixel_size(48)
-            .halign(gtk::Align::Center)
-            .valign(gtk::Align::Center)
-            .hexpand(true)
-            .build();
+        // Same size, corners and framing as video thumbnails: a real frame
+        // of the shader, drawn once.
+        if let Ok(source) = item.scene_source() {
+            let area = scene::widget(Scene::still(source, SCENE_PREVIEW_TIME), Audio::new());
+            // The card may be taller than 16:9 (the grid gives every card the
+            // height of the tallest one), so the shader must fill whatever
+            // it is given. An invisible 16:9 picture drives the height
+            // exactly as a video thumbnail does; the shader covers it.
+            let blank = gdk::MemoryTexture::new(
+                16,
+                9,
+                gdk::MemoryFormat::R8g8b8a8,
+                &glib::Bytes::from_owned(vec![0u8; 16 * 9 * 4]),
+                16 * 4,
+            );
+            let sizer = gtk::Picture::builder()
+                .paintable(&blank)
+                .content_fit(gtk::ContentFit::Cover)
+                .can_shrink(true)
+                .width_request(256)
+                .height_request(144)
+                .build();
+            area.set_hexpand(true);
+            area.set_vexpand(true);
+            let frame = gtk::Overlay::builder()
+                .overflow(gtk::Overflow::Hidden)
+                .css_classes(["frontrise-thumb"])
+                .child(&sizer)
+                .build();
+            frame.add_overlay(&area);
+            return frame.upcast();
+        }
         let b = gtk::Box::builder()
             .css_classes(["frontrise-scene-thumb"])
             .width_request(256)
             .height_request(144)
             .build();
-        b.append(&icon);
         return b.upcast();
     }
 
@@ -299,16 +324,6 @@ fn menu(item: &Item, playlists: &[crate::config::Playlist], monitors: &[engine::
     let playlist_section = gio::Menu::new();
     playlist_section.append_submenu(Some("Add to Playlist"), &add);
     menu.append_section(None, &playlist_section);
-
-    if item.kind == Kind::Video {
-        let link = gio::Menu::new();
-        let label = if item.backdrop_id.is_some() { "Change Backdrop Link…" } else { "Link to Backdrop…" };
-        link.append_item(&entry(label, "win.link-backdrop", &item.id));
-        if item.backdrop_id.is_some() {
-            link.append_item(&entry("Remove Backdrop Link", "win.unlink-backdrop", &item.id));
-        }
-        menu.append_section(None, &link);
-    }
 
     if !item.is_builtin() {
         let remove = gio::Menu::new();

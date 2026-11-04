@@ -113,6 +113,14 @@ impl Scene {
         let uses_audio = ["iSpectrum", "iLevel", "iBass"].iter().any(|u| source.contains(u));
         Rc::new(Self { source, uses_audio, clock: Clock::default() })
     }
+
+    /// A scene frozen at `seconds`: its clock never runs, so a widget made
+    /// from it draws a single frame (library previews).
+    pub fn still(source: String, seconds: f64) -> Rc<Self> {
+        let scene = Self::new(source);
+        scene.clock.base.set(seconds);
+        scene
+    }
 }
 
 struct Program {
