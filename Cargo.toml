@@ -3,6 +3,7 @@ name = "frontrise"
 version = "0.3.4"
 edition = "2021"
 description = "Animated video and shader wallpapers for GNOME"
+license = "MIT"
 
 [dependencies]
 gtk = { package = "gtk4", version = "0.11", features = ["v4_14"] }

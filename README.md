@@ -249,3 +249,7 @@ settings — the extension reads `settings` from it), thumbnails in
 Runs a headless, isolated GNOME Shell 50 (private D-Bus, dconf and XDG
 dirs) with the extension and a test driver; results and screenshots land in
 the work directory.
+
+## License
+
+Frontrise is released under the [MIT License](LICENSE).
