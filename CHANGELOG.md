@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4 - 2026-11-05
+
+### Fixed
+- The wallpaper of a display could still be drawn in the bottom-right quarter
+  of the screen after login: the extension minimized the renderer window while
+  it was being mapped, which left a stale offset in Mutter's fullscreen
+  surface. It now keeps the window mapped for one paint before minimizing it.
+
 ## 0.3.3 - 2026-11-05
 
 ### Added
