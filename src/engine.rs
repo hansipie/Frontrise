@@ -321,6 +321,8 @@ pub struct Engine {
     repair_wanted: Cell<bool>,
     shell_listeners: RefCell<Vec<ShellListener>>,
     reconcile_queued: Cell<bool>,
+    /// What the system wallpaper still was last made from: item, width, height.
+    last_still: RefCell<Option<(String, i32, i32)>>,
     status_listeners: RefCell<Vec<Rc<dyn Fn()>>>,
     keep_alive: RefCell<Vec<glib::Object>>,
     weak_self: Weak<Engine>,
@@ -341,6 +343,7 @@ impl Engine {
             repair_wanted: Cell::new(false),
             shell_listeners: RefCell::default(),
             reconcile_queued: Cell::new(false),
+            last_still: RefCell::new(None),
             status_listeners: RefCell::default(),
             keep_alive: RefCell::default(),
             weak_self: weak.clone(),
@@ -613,6 +616,7 @@ impl Engine {
 
         self.apply_pause();
         self.notify_status();
+        self.sync_still();
     }
 
     fn create_wall(&self, m: &MonitorInfo, root: &str) -> Wall {
@@ -710,12 +714,95 @@ impl Engine {
         drop(store);
         self.apply_pause();
         self.notify_status();
+        self.sync_still();
     }
 
     /// Settings changed (pause rules, sound): re-evaluate without rebuilding.
     pub fn settings_changed(&self) {
         self.apply_pause();
         self.notify_status();
+        self.sync_still();
+    }
+
+    /// Makes GNOME's own wallpaper a still of what plays on the first display
+    /// (GNOME has one system wallpaper for all displays), or gives the user's
+    /// previous wallpaper back when the option is off.
+    fn sync_still(&self) {
+        const STILL_TIME: f64 = 8.0;
+        let (enabled, original) = {
+            let store = self.state.store.borrow();
+            (store.settings.sync_system_wallpaper, store.original_wallpaper.clone())
+        };
+        if !enabled {
+            self.last_still.replace(None);
+            if let Some(original) = original {
+                crate::still::restore(&original);
+                self.state.modify_quiet(|s| s.original_wallpaper = None);
+            }
+            return;
+        }
+
+        // The first display that shows something, by its native pixel size.
+        let target = monitors().into_iter().find_map(|m| {
+            let root = self.walls.borrow().get(&m.connector)?.root.clone();
+            let id = self.players.borrow().get(&root)?.content.borrow().item_id.clone();
+            let scale = m.monitor.scale_factor().max(1);
+            Some((id, m.width * scale, m.height * scale))
+        });
+        let Some((id, width, height)) = target else { return };
+        let key = (id.clone(), width, height);
+        if self.last_still.borrow().as_ref() == Some(&key) {
+            return;
+        }
+        let Some(item) = self.state.store.borrow().item(&id).cloned() else { return };
+        if !item.is_available() {
+            return;
+        }
+        self.last_still.replace(Some(key.clone()));
+
+        let out = crate::still::next_path();
+        let target = out.clone();
+        let weak = self.weak_self.clone();
+        let finish = move |result: Result<(), String>| {
+            let Some(engine) = weak.upgrade() else { return };
+            // Superseded while it was being made: the newer request applies.
+            if engine.last_still.borrow().as_ref() != Some(&key) {
+                return;
+            }
+            let applied = result.and_then(|()| {
+                // Keep the user's own wallpaper, once, before replacing it.
+                if engine.state.store.borrow().original_wallpaper.is_none() {
+                    if let Some(original) = crate::still::current() {
+                        engine.state.modify_quiet(|s| s.original_wallpaper = Some(original));
+                    }
+                }
+                crate::still::apply(&out)
+            });
+            if let Err(e) = applied {
+                eprintln!("frontrise: system wallpaper not updated: {e}");
+                engine.last_still.replace(None);
+            }
+        };
+
+        match item.kind {
+            Kind::Scene => {
+                let result = item.scene_source().and_then(|src| {
+                    crate::thumbs::generate_scene_sized(&src, STILL_TIME, &target, width, height)
+                });
+                finish(result);
+            }
+            Kind::Video => {
+                let Some(video) = item.path.clone() else { return };
+                glib::spawn_future_local(async move {
+                    let result = gio::spawn_blocking(move || {
+                        crate::thumbs::generate_sized(&video, &target, width)
+                    })
+                    .await
+                    .unwrap_or_else(|_| Err("worker panicked".to_owned()));
+                    finish(result);
+                });
+            }
+        }
     }
 
     pub fn shutdown(&self) {

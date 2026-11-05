@@ -126,6 +126,8 @@ pub struct Settings {
     pub panel_icon: bool,
     /// Use the GPU video decoder (NVDEC). Read at startup, before GStreamer init.
     pub hardware_decoding: bool,
+    /// Keep GNOME's own static wallpaper in step with the animated one.
+    pub sync_system_wallpaper: bool,
 }
 
 impl Default for Settings {
@@ -139,6 +141,7 @@ impl Default for Settings {
             lock_screen: true,
             panel_icon: true,
             hardware_decoding: false,
+            sync_system_wallpaper: true,
         }
     }
 }
@@ -162,6 +165,16 @@ pub struct Store {
     pub settings: Settings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension_repair: Option<RepairConsent>,
+    /// The system wallpaper from before Frontrise replaced it with a still.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_wallpaper: Option<OriginalWallpaper>,
+}
+
+/// GNOME's `picture-uri` / `picture-uri-dark` as the user had set them.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OriginalWallpaper {
+    pub uri: String,
+    pub uri_dark: String,
 }
 
 /// Identifies this installation of Frontrise: its version and when its

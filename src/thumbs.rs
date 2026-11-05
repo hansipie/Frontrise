@@ -13,10 +13,15 @@ pub fn path_for(id: &str) -> PathBuf {
 /// Decodes one frame (about a quarter in, at most 3 s) and writes a PNG.
 /// Blocking: call from a worker thread.
 pub fn generate(video: &Path, out: &Path) -> Result<(), String> {
-    let pipeline = gst::parse::launch(
+    generate_sized(video, out, 384)
+}
+
+/// Same as [`generate`], scaled to `width` pixels wide.
+pub fn generate_sized(video: &Path, out: &Path, width: i32) -> Result<(), String> {
+    let pipeline = gst::parse::launch(&format!(
         "uridecodebin name=src ! videoconvert ! videoscale ! \
-         video/x-raw,format=RGBA,width=384,pixel-aspect-ratio=1/1 ! appsink name=sink",
-    )
+         video/x-raw,format=RGBA,width={width},pixel-aspect-ratio=1/1 ! appsink name=sink"
+    ))
     .map_err(|e| e.to_string())?
     .downcast::<gst::Pipeline>()
     .map_err(|_| "not a pipeline")?;
@@ -93,10 +98,13 @@ fn write_png(out: &Path, width: u32, height: u32, mut pixels: Vec<u8>) -> Result
 /// Renders a frame of a scene (`seconds` into the animation) to a PNG.
 /// Main thread only: it needs a GL context.
 pub fn generate_scene(source: &str, seconds: f64, out: &Path) -> Result<(), String> {
-    const W: i32 = 384;
-    const H: i32 = 216;
-    let pixels = crate::scene::render_still(source, seconds, W, H)?;
-    write_png(out, W as u32, H as u32, pixels)
+    generate_scene_sized(source, seconds, out, 384, 216)
+}
+
+/// Same as [`generate_scene`], at `width` x `height` pixels.
+pub fn generate_scene_sized(source: &str, seconds: f64, out: &Path, width: i32, height: i32) -> Result<(), String> {
+    let pixels = crate::scene::render_still(source, seconds, width, height)?;
+    write_png(out, width as u32, height as u32, pixels)
 }
 
 /// True if the cached scene preview `out` is newer than the scene file (when

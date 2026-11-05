@@ -64,6 +64,9 @@ pub fn present(ctx: &Rc<Ctx>) {
         |s| s.autostart, |s, v| s.autostart = v, Some(autostart::set));
     switch(ctx, &system, "Show on lock screen", "Takes effect the next time the screen locks",
         |s| s.lock_screen, |s, v| s.lock_screen = v, None);
+    switch(ctx, &system, "Replace the system wallpaper with a still",
+        "Sets a still image of the animated wallpaper as GNOME's own wallpaper, so it shows when Frontrise is not running. Turning this off restores your previous wallpaper",
+        |s| s.sync_system_wallpaper, |s, v| s.sync_system_wallpaper = v, None);
     switch(ctx, &system, "Top bar icon", "Quick controls in the GNOME top bar",
         |s| s.panel_icon, |s, v| s.panel_icon = v, None);
     switch(ctx, &system, "Hardware video decoding",

@@ -9,6 +9,7 @@ mod power;
 mod scene;
 mod shellext;
 mod state;
+mod still;
 mod thumbs;
 mod ui;
 
