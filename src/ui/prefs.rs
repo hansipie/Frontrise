@@ -81,7 +81,7 @@ pub fn present(ctx: &Rc<Ctx>) {
         .build();
     let row = adw::ActionRow::builder()
         .title("Repair extension")
-        .subtitle("Turn the extension back on and update it for this GNOME version. Takes effect after logging out and back in")
+        .subtitle("Install or update the extension, turn it back on and declare this GNOME version. Takes effect after logging out and back in")
         .activatable_widget(&repair)
         .build();
     row.add_suffix(&repair);

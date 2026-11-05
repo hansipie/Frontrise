@@ -35,9 +35,14 @@ install -Dm755 target/release/frontrise "$BIN_DIR/frontrise"
 install -Dm644 data/icons/$APP_ID.svg "$DATA/icons/hicolor/scalable/apps/$APP_ID.svg"
 sed "s|^Exec=frontrise|Exec=$BIN_DIR/frontrise|" data/$APP_ID.desktop \
     | install -Dm644 /dev/stdin "$DATA/applications/$APP_ID.desktop"
-mkdir -p "$EXT_DIR/icons"
-install -m644 extension/extension.js extension/metadata.json "$EXT_DIR/"
-install -m644 extension/icons/frontrise-symbolic.svg "$EXT_DIR/icons/"
+# The binary embeds the extension and installs/refreshes it itself (with the
+# user's consent), but copying it here too keeps this script standalone: the
+# extension is in place before the next login even if Frontrise is never
+# started, and the copy is identical to the embedded one, so the app finds
+# nothing to refresh. Packages may ship only the binary, desktop file and icon.
+(cd extension && find . -type f -print0 | while IFS= read -r -d '' f; do
+    install -Dm644 "$f" "$EXT_DIR/${f#./}"
+done)
 
 update-desktop-database "$DATA/applications" 2>/dev/null || true
 

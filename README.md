@@ -135,6 +135,14 @@ on the host, then installs:
   `~/.local/share/icons`;
 - the extension in `~/.local/share/gnome-shell/extensions/frontrise@ansicode.fr`.
 
+The extension's files are also embedded in the `frontrise` binary, so a
+package (RPM, deb, PKGBUILD…) only needs to ship the binary, the desktop file
+and the icon: at its first launch, Frontrise offers to install the extension
+in `$XDG_DATA_HOME/gnome-shell/extensions/frontrise@ansicode.fr` (by default
+`~/.local/share/…`), declaring the running GNOME Shell version. After an
+update of Frontrise, it offers to refresh that copy when it differs from the
+embedded one. Either way, log out and back in afterwards.
+
 To reinstall an already built `target/release/frontrise`, use
 `./install.sh --no-build`. Make sure `~/.local/bin` is in your `PATH` to use
 the `frontrise` command (the app grid entry works either way).
@@ -147,9 +155,10 @@ first install, log out, log back in, then run:
     gnome-extensions enable frontrise@ansicode.fr
 
 (or toggle *Frontrise* in the Extensions app). On later installs,
-`install.sh` enables it by itself. If the extension is later found turned off
-(or the global *Extensions* switch is off), or out of date after a GNOME
-upgrade, Frontrise asks before repairing it. The answer (*Repair* or *Not
+`install.sh` enables it by itself. If the extension is later found missing,
+older than the app, turned off (or the global *Extensions* switch is off), or
+out of date after a GNOME upgrade, Frontrise asks before installing or
+repairing it. The answer (*Repair* or *Not
 Now*) is remembered until Frontrise is updated or reinstalled; with *Repair*,
 later problems are fixed automatically, once per launch. *Preferences → GNOME
 Extension → Repair extension* (or the banner's *Repair* button) repairs it at
@@ -216,6 +225,17 @@ settings — the extension reads `settings` from it), thumbnails in
 - GNOME Shell 50 and 51 (tested only in a nested headless GNOME Shell 50.6).
 - On Wayland, a Shell version newly declared in `metadata.json` (or a freshly
   installed extension) is only picked up at the next login.
+- Frontrise only installs, refreshes or patches its extension in the user's
+  directory (`$XDG_DATA_HOME/gnome-shell/extensions`). A copy installed
+  system-wide (`/usr/share/gnome-shell/extensions`) is not touched; when it is
+  out of date, the user copy installed by Frontrise takes precedence over it.
+- Installing the extension needs a running GNOME Shell (Frontrise reads its
+  version over D-Bus). After each update of Frontrise whose extension changed,
+  the user is asked again (the answer is kept per installation) and must log
+  out and back in once.
+- Uninstalling a package does not remove the extension copied in the user's
+  directory; `./install.sh --uninstall` or `gnome-extensions uninstall
+  frontrise@ansicode.fr` does.
 - No playback speed control.
 - Wallpapers do not receive clicks (GNOME gives no input to the background).
 - The renderer windows are recognised by their title.
