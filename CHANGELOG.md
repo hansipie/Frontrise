@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 - 2026-11-05
+
+### Fixed
+- In the Overview, a strip of the static wallpaper could show below the
+  animated one (notably when the dash appeared). The extension resized the
+  live clone from the background's size notifications, after GNOME had
+  already allocated it, which left the clone one layout behind and flooded
+  the journal with "needs an allocation" warnings. The clone is now laid out
+  by a layout manager, within the same allocation pass as the background.
+
 ## 0.4.0 - 2026-11-05
 
 ### Added
