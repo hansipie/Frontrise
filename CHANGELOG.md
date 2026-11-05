@@ -30,9 +30,10 @@
   app), now every file of `extension/`.
 
 ### Fixed
-- The wallpaper of a secondary display could be drawn in the bottom-right
-  quarter of the screen after login: the extension now lays the live clone out
-  again whenever it refreshes and shortly after a renderer window appears.
+- The extension lays the live clone out again whenever it refreshes and
+  shortly after a renderer window appears. This did not fix the wallpaper
+  being drawn in the bottom-right quarter of the screen after login; see
+  0.3.4.
 
 ## 0.3.2 - 2026-11-05
 
