@@ -95,6 +95,7 @@ class RendererKeeper {
     constructor(onChange) {
         this._onChange = onChange;
         this._windows = new Map(); // Meta.Window -> signal ids
+        this._pendingMinimize = new Map();
     }
 
     enable() {
@@ -115,12 +116,13 @@ class RendererKeeper {
             return;
         const ids = [
             window.connect('notify::minimized', () => {
-                if (!window.minimized)
+                if (!window.minimized && !this._pendingMinimize.has(window))
                     window.minimize();
             }),
             window.connect('raised', () => window.lower()),
             window.connect('position-changed', () => this._place(window)),
             window.connect('unmanaged', () => {
+                this._cancelMinimize(window);
                 this._windows.delete(window);
                 this._onChange();
             }),
@@ -132,7 +134,31 @@ class RendererKeeper {
             actor.opacity = 0;
         this._place(window);
         window.lower();
-        window.minimize();
+        // Keep the source mapped through its first allocation/paint. Mutter's
+        // Wayland fullscreen code centres the surface container using the
+        // allocated child sizes, and defers geometry sync while unmapped.
+        // Minimizing inside ::map can leave a (width/2, height/2) offset in
+        // that container even though the window and clone sizes are correct.
+        // Opacity already hides the original; create the clone immediately.
+        if (actor && !window.minimized) {
+            const pending = {paintId: 0, laterId: 0};
+            this._pendingMinimize.set(window, pending);
+            pending.paintId = global.stage.connect('after-paint', () => {
+                if (!actor.is_mapped())
+                    return;
+                global.stage.disconnect(pending.paintId);
+                pending.paintId = 0;
+                // Do not change the scene graph during paint traversal.
+                pending.laterId = global.compositor.get_laters().add(
+                    Meta.LaterType.BEFORE_REDRAW, () => {
+                        this._pendingMinimize.delete(window);
+                        window.minimize();
+                        return GLib.SOURCE_REMOVE;
+                    });
+            });
+        } else {
+            window.minimize();
+        }
         this._onChange();
         // At login the window reaches its fullscreen size a bit later: lay the
         // clones out again once it has settled.
@@ -155,12 +181,24 @@ class RendererKeeper {
     }
 
     _release(window) {
+        this._cancelMinimize(window);
         for (const id of this._windows.get(window) ?? [])
             window.disconnect(id);
         this._windows.delete(window);
         const actor = window.get_compositor_private();
         if (actor)
             actor.opacity = 255;
+    }
+
+    _cancelMinimize(window) {
+        const pending = this._pendingMinimize.get(window);
+        if (!pending)
+            return;
+        if (pending.paintId)
+            global.stage.disconnect(pending.paintId);
+        if (pending.laterId)
+            global.compositor.get_laters().remove(pending.laterId);
+        this._pendingMinimize.delete(window);
     }
 
     rendererFor(monitorIndex) {
