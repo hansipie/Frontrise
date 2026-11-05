@@ -7,6 +7,7 @@ use adw::prelude::*;
 use crate::app::Ctx;
 use crate::autostart;
 use crate::config::Settings;
+use crate::shellext;
 
 fn switch(
     ctx: &Rc<Ctx>,
@@ -69,6 +70,25 @@ pub fn present(ctx: &Rc<Ctx>) {
         "Decode with the GPU. Can use more memory and CPU on some NVIDIA setups. Takes effect after restarting Frontrise",
         |s| s.hardware_decoding, |s, v| s.hardware_decoding = v, None);
     page.add(&system);
+
+    let extension = adw::PreferencesGroup::builder()
+        .title("GNOME Extension")
+        .description("Frontrise places wallpapers through its GNOME Shell extension.")
+        .build();
+    let repair = gtk::Button::builder()
+        .label("Repair")
+        .valign(gtk::Align::Center)
+        .build();
+    let row = adw::ActionRow::builder()
+        .title("Repair extension")
+        .subtitle("Turn the extension back on and update it for this GNOME version. Takes effect after logging out and back in")
+        .activatable_widget(&repair)
+        .build();
+    row.add_suffix(&repair);
+    let c = ctx.clone();
+    repair.connect_clicked(move |_| shellext::repair_now(&c.engine));
+    extension.add(&row);
+    page.add(&extension);
 
     let dialog = adw::PreferencesDialog::new();
     dialog.add(&page);

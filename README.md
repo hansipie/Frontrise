@@ -148,9 +148,13 @@ first install, log out, log back in, then run:
 
 (or toggle *Frontrise* in the Extensions app). On later installs,
 `install.sh` enables it by itself. If the extension is later found turned off
-(or the global *Extensions* switch is off), Frontrise turns it back on
-automatically, once per launch; if that fails, the banner shows the command
-above.
+(or the global *Extensions* switch is off), or out of date after a GNOME
+upgrade, Frontrise asks before repairing it. The answer (*Repair* or *Not
+Now*) is remembered until Frontrise is updated or reinstalled; with *Repair*,
+later problems are fixed automatically, once per launch. *Preferences → GNOME
+Extension → Repair extension* (or the banner's *Repair* button) repairs it at
+any time. After every repair, log out and back in for the extension to become
+active. If a repair fails, the banner shows why and the command above.
 
 #### 6. Start Frontrise
 

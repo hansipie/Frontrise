@@ -5,6 +5,8 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
@@ -141,6 +143,16 @@ impl Default for Settings {
     }
 }
 
+/// The user's answer to "may Frontrise repair its GNOME extension by
+/// itself?". It only holds for the installation it was given for: updating
+/// or reinstalling Frontrise asks again.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepairConsent {
+    /// `install_stamp()` at the time of the answer.
+    pub install: String,
+    pub allow: bool,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Store {
@@ -148,6 +160,29 @@ pub struct Store {
     pub playlists: Vec<Playlist>,
     pub displays: BTreeMap<String, DisplayConfig>,
     pub settings: Settings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension_repair: Option<RepairConsent>,
+}
+
+/// Identifies this installation of Frontrise: its version and when its
+/// binary was written (install.sh rewrites it on every install).
+pub fn install_stamp() -> &'static str {
+    static STAMP: OnceLock<String> = OnceLock::new();
+    STAMP.get_or_init(|| {
+        let modified = std::env::current_exe()
+            .and_then(std::fs::metadata)
+            .and_then(|m| m.modified())
+            .ok();
+        stamp(env!("CARGO_PKG_VERSION"), modified)
+    })
+}
+
+fn stamp(version: &str, modified: Option<SystemTime>) -> String {
+    match modified.and_then(|t| t.duration_since(UNIX_EPOCH).ok()) {
+        Some(d) if d.as_secs() > 0 => format!("{version}@{}", d.as_secs()),
+        // Read-only images can zero the mtime: fall back to the version.
+        _ => version.to_owned(),
+    }
 }
 
 pub fn config_dir() -> PathBuf {
@@ -213,6 +248,16 @@ impl Store {
         if let Err(e) = result {
             eprintln!("frontrise: could not save config: {e}");
         }
+    }
+
+    /// Whether the user allowed automatic repairs for installation
+    /// `install`; `None` when they have not answered for it yet.
+    pub fn repair_consent(&self, install: &str) -> Option<bool> {
+        self.extension_repair.as_ref().filter(|c| c.install == install).map(|c| c.allow)
+    }
+
+    pub fn set_repair_consent(&mut self, install: &str, allow: bool) {
+        self.extension_repair = Some(RepairConsent { install: install.to_owned(), allow });
     }
 
     pub fn item(&self, id: &str) -> Option<&Item> {
@@ -299,5 +344,47 @@ pub fn kind_for_path(path: &Path) -> Option<Kind> {
         "glsl" | "frag" | "fs" | "shader" => Some(Kind::Scene),
         "mp4" | "m4v" | "mov" | "webm" | "mkv" | "avi" | "ogv" | "gif" => Some(Kind::Video),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn repair_consent_holds_for_one_installation() {
+        let mut store = Store::default();
+        assert_eq!(store.repair_consent("0.3.2@100"), None);
+        store.set_repair_consent("0.3.2@100", false);
+        assert_eq!(store.repair_consent("0.3.2@100"), Some(false));
+        // An update or a reinstall forgets the answer.
+        assert_eq!(store.repair_consent("0.3.3@200"), None);
+        assert_eq!(store.repair_consent("0.3.2@300"), None);
+        store.set_repair_consent("0.3.3@200", true);
+        assert_eq!(store.repair_consent("0.3.3@200"), Some(true));
+    }
+
+    #[test]
+    fn repair_consent_survives_a_save() {
+        let mut store = Store::default();
+        let text = serde_json::to_string(&store).unwrap();
+        assert!(!text.contains("extension_repair"));
+        store.set_repair_consent("1.0@5", true);
+        let text = serde_json::to_string(&store).unwrap();
+        let back: Store = serde_json::from_str(&text).unwrap();
+        assert_eq!(back.repair_consent("1.0@5"), Some(true));
+        // Older config files have no answer.
+        let old: Store = serde_json::from_str(r#"{"settings": {}}"#).unwrap();
+        assert_eq!(old.extension_repair, None);
+    }
+
+    #[test]
+    fn install_stamp_combines_version_and_binary_time() {
+        let t = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        assert_eq!(stamp("0.3.2", Some(t)), "0.3.2@1700000000");
+        assert_eq!(stamp("0.3.2", Some(UNIX_EPOCH)), "0.3.2");
+        assert_eq!(stamp("0.3.2", None), "0.3.2");
+        assert!(install_stamp().starts_with(env!("CARGO_PKG_VERSION")));
     }
 }

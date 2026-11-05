@@ -88,6 +88,8 @@ fn startup(app: &adw::Application) {
         );
     }
 
+    // Read the binary's time now: an update replaces it while we run.
+    crate::config::install_stamp();
     let state = State::load();
     let engine = Engine::new(app, state.clone());
     let ctx = Rc::new(Ctx {
@@ -103,6 +105,7 @@ fn startup(app: &adw::Application) {
 
     add_actions(app, &ctx);
     power::watch(&engine);
+    ui::watch_shell(&ctx);
     shellext::watch(&engine);
     if state.store.borrow().settings.autostart {
         autostart::set(true); // keep the path current

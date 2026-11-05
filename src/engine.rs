@@ -20,7 +20,7 @@ use gtk::{gdk, glib};
 use crate::audio::Audio;
 use crate::config::{Fit, Kind, Source, Store};
 use crate::scene::{self, Scene};
-use crate::shellext::ShellStatus;
+use crate::shellext::{ShellEvent, ShellStatus};
 use crate::state::State;
 use crate::WINDOW_TITLE_PREFIX;
 
@@ -304,6 +304,8 @@ impl Wall {
     }
 }
 
+type ShellListener = Rc<dyn Fn(&ShellEvent)>;
+
 pub struct Engine {
     app: gtk::Application,
     state: Rc<State>,
@@ -315,6 +317,9 @@ pub struct Engine {
     shell_proxy: RefCell<Option<gio::DBusProxy>>,
     /// What the automatic repair of the extension did, or why it failed.
     shell_note: RefCell<Option<String>>,
+    /// The extension needs a repair the user has not allowed yet.
+    repair_wanted: Cell<bool>,
+    shell_listeners: RefCell<Vec<ShellListener>>,
     reconcile_queued: Cell<bool>,
     status_listeners: RefCell<Vec<Rc<dyn Fn()>>>,
     keep_alive: RefCell<Vec<glib::Object>>,
@@ -333,6 +338,8 @@ impl Engine {
             shell_status: Cell::new(ShellStatus::Unknown),
             shell_proxy: RefCell::default(),
             shell_note: RefCell::default(),
+            repair_wanted: Cell::new(false),
+            shell_listeners: RefCell::default(),
             reconcile_queued: Cell::new(false),
             status_listeners: RefCell::default(),
             keep_alive: RefCell::default(),
@@ -417,6 +424,31 @@ impl Engine {
     pub fn set_shell_note(&self, note: Option<String>) {
         if self.shell_note.replace(note.clone()) != note {
             self.notify_status();
+        }
+    }
+
+    pub fn state(&self) -> &Rc<State> {
+        &self.state
+    }
+
+    pub fn repair_wanted(&self) -> bool {
+        self.repair_wanted.get()
+    }
+
+    pub fn set_repair_wanted(&self, wanted: bool) {
+        if self.repair_wanted.replace(wanted) != wanted {
+            self.notify_status();
+        }
+    }
+
+    pub fn connect_shell_event(&self, f: impl Fn(&ShellEvent) + 'static) {
+        self.shell_listeners.borrow_mut().push(Rc::new(f));
+    }
+
+    pub fn emit_shell_event(&self, event: ShellEvent) {
+        let listeners: Vec<ShellListener> = self.shell_listeners.borrow().clone();
+        for l in listeners {
+            l(&event);
         }
     }
 

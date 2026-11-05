@@ -5,6 +5,7 @@ pub mod library;
 pub mod playlists;
 pub mod prefs;
 
+use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -12,9 +13,9 @@ use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 
 use crate::app::Ctx;
-use crate::config::Source;
+use crate::config::{install_stamp, Source};
 use crate::engine;
-use crate::shellext::{self, ShellStatus};
+use crate::shellext::{self, ShellEvent, ShellStatus};
 use crate::APP_ID;
 
 pub fn present(ctx: &Rc<Ctx>, page: Option<&str>) {
@@ -26,6 +27,113 @@ pub fn present(ctx: &Rc<Ctx>, page: Option<&str>) {
         }
     }
     window.present();
+    ctx.app.withdraw_notification(NOTIFICATION);
+    ask_repair(ctx);
+}
+
+const NOTIFICATION: &str = "extension-repair";
+
+thread_local! {
+    // The question is asked at most once per launch (and per way of asking).
+    static ASKED: Cell<bool> = const { Cell::new(false) };
+    static NOTIFIED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Shows repair questions and outcomes. Called once at startup.
+pub fn watch_shell(ctx: &Rc<Ctx>) {
+    let c = ctx.clone();
+    ctx.engine.connect_shell_event(move |event| match event {
+        ShellEvent::AskRepair => ask_repair(&c),
+        ShellEvent::Repaired { result, asked } => repaired(&c, result, *asked),
+    });
+}
+
+/// Tells the user something while the window may be closed (Frontrise often
+/// runs in the background): a dialog on the window, else a notification.
+fn tell(ctx: &Ctx, heading: &str, body: &str) {
+    match parent(ctx) {
+        Some(window) => {
+            let dialog = adw::AlertDialog::new(Some(heading), Some(body));
+            dialog.add_response("ok", "OK");
+            dialog.present(Some(&window));
+        }
+        None => {
+            let n = gio::Notification::new(heading);
+            n.set_body(Some(body));
+            n.set_default_action("app.show");
+            ctx.app.send_notification(Some(NOTIFICATION), &n);
+        }
+    }
+}
+
+/// Asks whether Frontrise may repair its GNOME extension, unless the user
+/// already answered for this installation.
+pub fn ask_repair(ctx: &Rc<Ctx>) {
+    let answered = ctx.state.store.borrow().repair_consent(install_stamp()).is_some();
+    if answered || !ctx.engine.repair_wanted() {
+        return;
+    }
+    let Some(window) = parent(ctx) else {
+        if !NOTIFIED.replace(true) {
+            let n = gio::Notification::new("The Frontrise GNOME extension needs a repair");
+            n.set_body(Some("Wallpapers are stopped. Open Frontrise to repair it."));
+            n.set_default_action("app.show");
+            ctx.app.send_notification(Some(NOTIFICATION), &n);
+        }
+        return;
+    };
+    if ASKED.replace(true) {
+        return;
+    }
+    let problem = match ctx.engine.shell_status() {
+        ShellStatus::OutOfDate => "does not declare support for this GNOME version",
+        _ => "is turned off",
+    };
+    let dialog = adw::AlertDialog::new(
+        Some("Repair the GNOME Extension?"),
+        Some(&format!(
+            "The Frontrise GNOME extension {problem}, so wallpapers are stopped. \
+             Frontrise can repair it now and whenever this happens again.\n\n\
+             Your answer is kept until Frontrise is updated. You can also repair \
+             the extension at any time in Preferences. After a repair, log out and \
+             back in for the extension to become active."
+        )),
+    );
+    dialog.add_response("later", "Not Now");
+    dialog.add_response("repair", "Repair");
+    dialog.set_response_appearance("repair", adw::ResponseAppearance::Suggested);
+    dialog.set_default_response(Some("repair"));
+    // Closing without an answer asks again at the next launch.
+    dialog.set_close_response("dismiss");
+    let c = ctx.clone();
+    dialog.connect_response(None, move |_, response| {
+        let allow = match response {
+            "repair" => true,
+            "later" => false,
+            _ => return,
+        };
+        c.state.modify_quiet(|s| s.set_repair_consent(install_stamp(), allow));
+        if allow {
+            shellext::repair_now(&c.engine);
+        } else {
+            toast(&c, "You can repair the extension in Preferences");
+        }
+    });
+    dialog.present(Some(&window));
+}
+
+/// Reports a finished repair. Every successful one needs a new login.
+fn repaired(ctx: &Ctx, result: &Result<(), String>, asked: bool) {
+    match result {
+        Ok(()) => tell(
+            ctx,
+            "Log Out to Finish",
+            "Frontrise repaired its GNOME extension. Log out and back in for it to become active.",
+        ),
+        // Automatic failures are shown in the banner.
+        Err(e) if asked => tell(ctx, "Could Not Repair the Extension", e),
+        Err(_) => {}
+    }
 }
 
 pub fn about(ctx: &Rc<Ctx>) {
@@ -78,18 +186,22 @@ pub fn status_text(ctx: &Ctx) -> String {
 fn update_banner(ctx: &Ctx, banner: &adw::Banner) {
     let (text, button) = match ctx.engine.shell_status() {
         ShellStatus::Active | ShellStatus::Unknown => ("", None),
-        // Frontrise turns it on by itself; the button is only a fallback.
-        ShellStatus::Inactive => ("Turning on the Frontrise GNOME extension…", Some("Turn On")),
+        ShellStatus::Inactive => ("The Frontrise GNOME extension is turned off.", Some("Repair")),
         ShellStatus::NotLoaded => (
             "GNOME hasn't loaded the Frontrise extension yet. Log out and back in once after installing it.",
             None,
         ),
         ShellStatus::Failed => ("The Frontrise GNOME extension failed to start.", None),
-        ShellStatus::OutOfDate => ("The Frontrise GNOME extension does not support this GNOME version.", None),
+        ShellStatus::OutOfDate => (
+            "The Frontrise GNOME extension does not support this GNOME version.",
+            Some("Repair"),
+        ),
         ShellStatus::Unavailable => ("Frontrise needs GNOME Shell to place wallpapers.", None),
     };
     // The outcome of the automatic repair says more than the generic text.
     let note = (!text.is_empty()).then(|| ctx.engine.shell_note()).flatten();
+    // Once repaired, only a new login helps.
+    let button = button.filter(|_| note.as_deref() != Some(shellext::LOGOUT_NOTE));
     let text = note.as_deref().unwrap_or(text);
     banner.set_title(text);
     banner.set_button_label(button);
@@ -332,11 +444,7 @@ fn build(ctx: &Rc<Ctx>) -> adw::ApplicationWindow {
 
     let banner = adw::Banner::new("");
     let c = ctx.clone();
-    banner.connect_button_clicked(move |_| {
-        if let Some(proxy) = c.engine.shell_proxy() {
-            shellext::enable(&proxy, &c.engine);
-        }
-    });
+    banner.connect_button_clicked(move |_| shellext::repair_now(&c.engine));
 
     let status = gtk::Label::builder()
         .xalign(0.0)
