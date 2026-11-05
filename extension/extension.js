@@ -134,6 +134,15 @@ class RendererKeeper {
         window.lower();
         window.minimize();
         this._onChange();
+        // At login the window reaches its fullscreen size a bit later: lay the
+        // clones out again once it has settled.
+        for (const delay of [500, 1500, 4000]) {
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+                if (this._windows.has(window))
+                    this._onChange();
+                return GLib.SOURCE_REMOVE;
+            });
+        }
     }
 
     _place(window) {
@@ -195,8 +204,12 @@ class LiveLayer {
         if (!this.actor)
             return;
         const source = this._keeper.rendererFor(this._bg.monitor);
-        if (source === (this._clone?.source ?? null))
+        if (source === (this._clone?.source ?? null)) {
+            // Same renderer: its size may have settled since the last layout
+            // (login race), so always recompute.
+            this._layout();
             return;
+        }
         this._dropClone();
         if (!source) {
             this.actor.opacity = 0;
