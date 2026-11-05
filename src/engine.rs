@@ -97,6 +97,33 @@ impl Content {
     }
 }
 
+/// How long a replaced video stays alive, paused, before it is released.
+const VIDEO_RETIRE_DELAY_MS: u64 = 1500;
+
+impl Drop for Content {
+    fn drop(&mut self) {
+        if let Media::Video(media) = &self.media {
+            retire_video(media.clone());
+        }
+    }
+}
+
+/// Releases a video that is no longer shown, without crashing or freezing.
+///
+/// Disposing a `GtkMediaFile` stops its GstPlay pipeline and joins its thread
+/// on the main thread. Doing it while the clip plays races GStreamer's own
+/// threads: when the stop meets the loop's "about-to-finish" the pipeline
+/// deadlocks (the app freezes, wallpapers no longer change), otherwise GstPlay
+/// can touch itself after being freed (segfault in `gst_play_main`). Pausing
+/// first and releasing once the pipeline is idle avoids both.
+fn retire_video(media: gtk::MediaFile) {
+    media.set_loop(false);
+    media.pause();
+    glib::timeout_add_local_once(std::time::Duration::from_millis(VIDEO_RETIRE_DELAY_MS), move || {
+        drop(media);
+    });
+}
+
 struct Player {
     source: PlayerSource,
     /// Playlist order (item ids), shuffled if requested.

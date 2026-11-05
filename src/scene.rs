@@ -76,6 +76,23 @@ fn proc_address(name: &str) -> *const std::ffi::c_void {
     std::ptr::null()
 }
 
+/// Overrides libEGL's `eglTerminate` for the libraries that link it directly,
+/// that is GStreamer's GL library (GTK goes through libepoxy, which looks the
+/// real one up in libEGL itself, so GDK is unaffected).
+///
+/// GTK's video sink gives each video its own `GstGLDisplay` on GDK's Wayland
+/// connection. EGL hands out one display handle per native display, so
+/// GStreamer's EGLDisplay *is* GDK's, and GStreamer terminates it when the
+/// video is released: from then on every GL context of the process fails
+/// ("Unable to create a GL context"), scenes stay blank, and a GL area that
+/// was already on screen aborts in libepoxy. Displays live as long as the
+/// process anyway, so skipping the call is harmless. `build.rs` exports this
+/// symbol so the dynamic linker binds GStreamer to it.
+#[no_mangle]
+pub extern "C" fn eglTerminate(_display: *mut std::ffi::c_void) -> u32 {
+    1 // EGL_TRUE
+}
+
 /// A pausable clock shared by every display showing the same scene.
 #[derive(Default)]
 pub struct Clock {
@@ -223,6 +240,10 @@ pub fn widget(scene: Rc<Scene>, audio: Rc<Audio>) -> gtk::GLArea {
         #[strong]
         program,
         move |area| {
+            if let Some(e) = area.error() {
+                eprintln!("frontrise: OpenGL unavailable for scenes: {e}");
+                return;
+            }
             area.make_current();
             if let Some(e) = area.error() {
                 eprintln!("frontrise: OpenGL unavailable for scenes: {e}");
@@ -247,8 +268,8 @@ pub fn widget(scene: Rc<Scene>, audio: Rc<Audio>) -> gtk::GLArea {
         #[strong]
         program,
         move |area| {
-            area.make_current();
             if let Some(p) = program.borrow_mut().take() {
+                area.make_current();
                 unsafe {
                     p.gl.delete_program(p.program);
                     p.gl.delete_vertex_array(p.vao);
@@ -295,8 +316,10 @@ pub fn widget(scene: Rc<Scene>, audio: Rc<Audio>) -> gtk::GLArea {
     ));
 
     // Redraw every frame while playing; when paused the last frame stays.
+    // Without a program (no GL) there is nothing to draw: rendering anyway
+    // would fail `make_current` on every frame.
     area.add_tick_callback(move |area, _clock| {
-        if scene.clock.running() {
+        if scene.clock.running() && program.borrow().is_some() {
             area.queue_render();
         }
         glib::ControlFlow::Continue

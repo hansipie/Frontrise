@@ -70,7 +70,7 @@ pub fn present(ctx: &Rc<Ctx>) {
     switch(ctx, &system, "Top bar icon", "Quick controls in the GNOME top bar",
         |s| s.panel_icon, |s, v| s.panel_icon = v, None);
     switch(ctx, &system, "Hardware video decoding",
-        "Decode with the GPU. Can use more memory and CPU on some NVIDIA setups. Takes effect after restarting Frontrise",
+        "Decode with the GPU that drives the display (NVIDIA only when it drives the display). Takes effect after restarting Frontrise",
         |s| s.hardware_decoding, |s, v| s.hardware_decoding = v, None);
     page.add(&system);
 
