@@ -4,7 +4,7 @@
 
 <h1 align="center">Frontrise</h1>
 
-Animated video and shader wallpapers for GNOME (Shell 50, Wayland).
+Animated video and shader wallpapers for GNOME (Shell 50 and 51, Wayland).
 
 - **Videos** as wallpapers, on every display, in sync or one per display.
 - **Scenes**: GLSL shaders (Shadertoy-style `mainImage`), three built in
@@ -22,8 +22,8 @@ Animated video and shader wallpapers for GNOME (Shell 50, Wayland).
 
 To run Frontrise:
 
-- **GNOME Shell 50** on a **Wayland** session (the extension declares
-  support for 50 only; see [Limitations](#limitations)). Check with
+- **GNOME Shell 50 or 51** on a **Wayland** session (see
+  [Limitations](#limitations)). Check with
   `gnome-shell --version`.
 - GTK ≥ 4.14, libadwaita ≥ 1.6, GLib ≥ 2.80 and GStreamer 1.x, with the
   *plugins-base*, *plugins-good* and *libav* plugin sets.
@@ -67,11 +67,12 @@ package installation needs `sudo`).
 
     gnome-shell --version
 
-The extension declares support for **GNOME Shell 50 only**
+The extension declares support for **GNOME Shell 50 and 51**
 (`extension/metadata.json`). On another version, GNOME refuses to load it and
-Frontrise shows no wallpaper. As of this writing that means Fedora 44 or
-Ubuntu 26.04; rolling distributions (Arch, openSUSE Tumbleweed) already ship
-GNOME 51 and are not supported yet. A Wayland session is required.
+Frontrise shows no wallpaper. GNOME 51 is declared but untested. If a newer
+Shell leaves the extension "out of date", Frontrise adds that version to the
+installed `metadata.json` by itself; log out and back in once for it to take
+effect. A Wayland session is required.
 
 The app needs GTK ≥ 4.14, libadwaita ≥ 1.6, GLib ≥ 2.80 and GStreamer 1.x.
 
@@ -146,7 +147,10 @@ first install, log out, log back in, then run:
     gnome-extensions enable frontrise@ansicode.fr
 
 (or toggle *Frontrise* in the Extensions app). On later installs,
-`install.sh` enables it by itself.
+`install.sh` enables it by itself. If the extension is later found turned off
+(or the global *Extensions* switch is off), Frontrise turns it back on
+automatically, once per launch; if that fails, the banner shows the command
+above.
 
 #### 6. Start Frontrise
 
@@ -205,7 +209,9 @@ settings — the extension reads `settings` from it), thumbnails in
 
 ## Limitations
 
-- GNOME Shell 50 only (tested in a nested headless GNOME Shell 50.6).
+- GNOME Shell 50 and 51 (tested only in a nested headless GNOME Shell 50.6).
+- On Wayland, a Shell version newly declared in `metadata.json` (or a freshly
+  installed extension) is only picked up at the next login.
 - No playback speed control.
 - Wallpapers do not receive clicks (GNOME gives no input to the background).
 - The renderer windows are recognised by their title.
