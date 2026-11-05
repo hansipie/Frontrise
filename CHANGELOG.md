@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 - 2026-11-05
+
+### Added
+- Frontrise now sets a still image of the animated wallpaper as GNOME's own
+  wallpaper (`picture-uri` and `picture-uri-dark`), so the fallback shown when
+  Frontrise or its extension is not running matches what was playing. The
+  still is a frame of the video, or a render of the scene, at the native
+  resolution of the first display, and is refreshed whenever the content
+  changes (choice, playlist step, resolution change).
+- New *Replace the system wallpaper with a still* switch in the preferences,
+  on by default. The previous system wallpaper is saved once and restored when
+  the switch is turned off; a wallpaper the user changed since is left alone.
+
 ## 0.3.4 - 2026-11-05
 
 ### Fixed
