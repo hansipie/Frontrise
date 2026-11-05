@@ -78,14 +78,19 @@ pub fn status_text(ctx: &Ctx) -> String {
 fn update_banner(ctx: &Ctx, banner: &adw::Banner) {
     let (text, button) = match ctx.engine.shell_status() {
         ShellStatus::Active | ShellStatus::Unknown => ("", None),
-        ShellStatus::Inactive => ("The Frontrise GNOME extension is turned off.", Some("Turn On")),
+        // Frontrise turns it on by itself; the button is only a fallback.
+        ShellStatus::Inactive => ("Turning on the Frontrise GNOME extension…", Some("Turn On")),
         ShellStatus::NotLoaded => (
             "GNOME hasn't loaded the Frontrise extension yet. Log out and back in once after installing it.",
             None,
         ),
         ShellStatus::Failed => ("The Frontrise GNOME extension failed to start.", None),
+        ShellStatus::OutOfDate => ("The Frontrise GNOME extension does not support this GNOME version.", None),
         ShellStatus::Unavailable => ("Frontrise needs GNOME Shell to place wallpapers.", None),
     };
+    // The outcome of the automatic repair says more than the generic text.
+    let note = (!text.is_empty()).then(|| ctx.engine.shell_note()).flatten();
+    let text = note.as_deref().unwrap_or(text);
     banner.set_title(text);
     banner.set_button_label(button);
     banner.set_revealed(!text.is_empty());
@@ -329,7 +334,7 @@ fn build(ctx: &Rc<Ctx>) -> adw::ApplicationWindow {
     let c = ctx.clone();
     banner.connect_button_clicked(move |_| {
         if let Some(proxy) = c.engine.shell_proxy() {
-            shellext::enable(&proxy);
+            shellext::enable(&proxy, &c.engine);
         }
     });
 

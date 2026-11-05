@@ -313,6 +313,8 @@ pub struct Engine {
     conditions: RefCell<HashMap<Condition, bool>>,
     shell_status: Cell<ShellStatus>,
     shell_proxy: RefCell<Option<gio::DBusProxy>>,
+    /// What the automatic repair of the extension did, or why it failed.
+    shell_note: RefCell<Option<String>>,
     reconcile_queued: Cell<bool>,
     status_listeners: RefCell<Vec<Rc<dyn Fn()>>>,
     keep_alive: RefCell<Vec<glib::Object>>,
@@ -330,6 +332,7 @@ impl Engine {
             conditions: RefCell::default(),
             shell_status: Cell::new(ShellStatus::Unknown),
             shell_proxy: RefCell::default(),
+            shell_note: RefCell::default(),
             reconcile_queued: Cell::new(false),
             status_listeners: RefCell::default(),
             keep_alive: RefCell::default(),
@@ -405,6 +408,16 @@ impl Engine {
 
     pub fn set_shell_proxy(&self, proxy: gio::DBusProxy) {
         *self.shell_proxy.borrow_mut() = Some(proxy);
+    }
+
+    pub fn shell_note(&self) -> Option<String> {
+        self.shell_note.borrow().clone()
+    }
+
+    pub fn set_shell_note(&self, note: Option<String>) {
+        if self.shell_note.replace(note.clone()) != note {
+            self.notify_status();
+        }
     }
 
     pub fn set_shell_status(&self, status: ShellStatus) {

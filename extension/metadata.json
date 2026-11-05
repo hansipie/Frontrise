@@ -2,7 +2,7 @@
   "uuid": "frontrise@ansicode.fr",
   "name": "Frontrise",
   "description": "Shows Frontrise animated wallpapers on the desktop, in the Overview and on the lock screen, with quick controls in the top bar. Requires the Frontrise app.",
-  "shell-version": ["50"],
+  "shell-version": ["50", "51"],
   "session-modes": ["user", "unlock-dialog"],
   "version": 2
 }
