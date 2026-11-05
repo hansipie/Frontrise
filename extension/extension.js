@@ -214,6 +214,42 @@ class RendererKeeper {
 // ---------------------------------------------------------------------------
 // Live layer: a clone of the renderer inside one GNOME background actor.
 
+// Cover the box: scale each clone uniformly, centre it, let the layer crop the
+// overflow. Done inside the allocation pass, so the clone box is computed from
+// the background's size of that same pass, also while the Overview resizes it
+// (dash showing up, state transitions). The previous approach resized the clone
+// from the background's notify::width/height, i.e. after its children had been
+// allocated, which re-invalidated the clone every time and likely left it one
+// layout behind (static wallpaper visible below it, "needs an allocation"
+// warnings in the journal).
+const CoverLayout = GObject.registerClass(
+class FrontriseCoverLayout extends Clutter.LayoutManager {
+    vfunc_get_preferred_width(_container, _forHeight) {
+        return [0, 0];
+    }
+
+    vfunc_get_preferred_height(_container, _forWidth) {
+        return [0, 0];
+    }
+
+    vfunc_allocate(container, box) {
+        const W = box.get_width(), H = box.get_height();
+        for (const child of container.get_children()) {
+            const source = child.source;
+            const w = source?.width ?? 0, h = source?.height ?? 0;
+            const childBox = new Clutter.ActorBox();
+            if (W && H && w && h) {
+                const s = Math.max(W / w, H / h);
+                const x = box.x1 + (W - w * s) / 2;
+                const y = box.y1 + (H - h * s) / 2;
+                childBox.set_origin(x, y);
+                childBox.set_size(w * s, h * s);
+            }
+            child.allocate(childBox);
+        }
+    }
+});
+
 class LiveLayer {
     constructor(backgroundActor, keeper) {
         this._bg = backgroundActor;
@@ -221,6 +257,7 @@ class LiveLayer {
         this._clone = null;
         this._sourceIds = [];
         this.actor = new Clutter.Actor({
+            layout_manager: new CoverLayout(),
             clip_to_allocation: true,
             reactive: false,
             opacity: 0,
@@ -230,10 +267,6 @@ class LiveLayer {
             coordinate: Clutter.BindCoordinate.SIZE,
         }));
         backgroundActor.add_child(this.actor);
-        this._bgIds = [
-            backgroundActor.connect('notify::width', () => this._layout()),
-            backgroundActor.connect('notify::height', () => this._layout()),
-        ];
         this._destroyId = backgroundActor.connect('destroy', () => this.destroy());
         this.refresh();
     }
@@ -273,18 +306,10 @@ class LiveLayer {
         });
     }
 
-    // Cover the background: scale uniformly, centre, crop the overflow.
+    // The renderer's size changed (login race, new window): CoverLayout
+    // recomputes the clone box on the next allocation.
     _layout() {
-        const clone = this._clone;
-        if (!clone || !clone.source)
-            return;
-        const W = this._bg.width, H = this._bg.height;
-        const w = clone.source.width, h = clone.source.height;
-        if (!W || !H || !w || !h)
-            return;
-        const s = Math.max(W / w, H / h);
-        clone.set_size(w * s, h * s);
-        clone.set_position(Math.round((W - w * s) / 2), Math.round((H - h * s) / 2));
+        this.actor?.queue_relayout();
     }
 
     _dropClone(sourceGone = false) {
@@ -303,8 +328,6 @@ class LiveLayer {
         if (!this.actor)
             return;
         this._dropClone();
-        for (const id of this._bgIds)
-            this._bg.disconnect(id);
         this._bg.disconnect(this._destroyId);
         this.actor.destroy();
         this.actor = null;
