@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.3 - 2026-11-05
+
+### Added
+- The GNOME extension's files are embedded in the `frontrise` binary, so
+  packages (RPM, deb, PKGBUILD) only need to ship the binary, the desktop file
+  and the icon. When the extension is missing from
+  `$XDG_DATA_HOME/gnome-shell/extensions/frontrise@ansicode.fr`, Frontrise
+  offers to install it there, adding the running GNOME Shell major version to
+  `shell-version` when missing; the banner gets an *Install* button.
+- Frontrise refreshes the installed extension when its files differ from the
+  embedded ones (e.g. after an app update), through the same consent question.
+
+### Changed
+- Repairing an out-of-date extension now rewrites the user's copy from the
+  embedded files (plus the running Shell version) instead of patching the
+  installed `metadata.json` only; a system-wide copy is never modified.
+- The log-out notice is shown after any install or refresh; a manual repair
+  that changes nothing says so instead.
+- `install.sh` still copies the extension (so it works without starting the
+  app), now every file of `extension/`.
+
+### Fixed
+- The wallpaper of a secondary display could be drawn in the bottom-right
+  quarter of the screen after login: the extension now lays the live clone out
+  again whenever it refreshes and shortly after a renderer window appears.
+
 ## 0.3.2 - 2026-11-05
 
 ### Added
