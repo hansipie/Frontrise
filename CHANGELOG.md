@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.2 - 2026-11-05
+
+### Fixed
+- Scenes (Aurora, Pulse, Nebula…) could fail with "Unable to create a GL
+  context", and Frontrise could abort, after a video wallpaper had been
+  shown. When a video was released, GStreamer called `eglTerminate` on the EGL
+  display it shares with GTK, which broke OpenGL for the whole app. Frontrise
+  now provides a no-op `eglTerminate` that GStreamer binds to; GTK is not
+  affected.
+- A scene whose OpenGL context failed no longer retries on every frame, which
+  flooded the journal.
+- Crashes and freezes when switching wallpapers: a replaced video is now
+  paused and released 1.5 s later, instead of being destroyed while
+  GStreamer's playback thread is still running.
+
+### Changed
+- With "Hardware video decoding" on, NVIDIA's decoders (NVDEC) are only used
+  when the NVIDIA GPU drives the display. On hybrid laptops, videos are
+  decoded with VA-API on the GPU that drives the screen, without waking the
+  NVIDIA GPU.
+
 ## 0.4.1 - 2026-11-05
 
 ### Fixed
