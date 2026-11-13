@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Boomerang videos froze for about 8 s on every turn. Their clip was cached
+  as Matroska, and GTK's loop hand-over stalls on that container; clips are
+  now MP4 and play smoothly. Clips cached by 0.5.0 are rendered again.
+
 ## 0.5.0 - 2026-11-13
 
 ### Added

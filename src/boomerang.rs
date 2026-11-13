@@ -30,8 +30,17 @@ thread_local! {
     static FAILED: RefCell<HashMap<String, Instant>> = RefCell::default();
 }
 
+/// MP4, not Matroska: GTK loops a video by queueing the same file again when
+/// it is about to finish, and with a Matroska file that hand-over froze the
+/// picture for about 8 s on every turn. The very same stream in MP4 loops
+/// smoothly.
 pub fn path_for(id: &str) -> PathBuf {
-    cache_dir().join("boomerang").join(format!("{id}.mkv"))
+    cache_dir().join("boomerang").join(format!("{id}.mp4"))
+}
+
+/// Where Frontrise 0.5.0 cached clips, in Matroska.
+fn legacy_path_for(id: &str) -> PathBuf {
+    path_for(id).with_extension("mkv")
 }
 
 /// The rendered clip for `id`, if it exists and is not older than the video.
@@ -42,6 +51,7 @@ pub fn ready(id: &str, video: &Path) -> Option<PathBuf> {
 
 pub fn remove(id: &str) {
     let _ = std::fs::remove_file(path_for(id));
+    let _ = std::fs::remove_file(legacy_path_for(id));
 }
 
 /// Starts rendering `id`'s boomerang clip in the background, unless it is
@@ -55,6 +65,7 @@ pub fn request(id: &str, video: &Path) {
     let video = video.to_owned();
     glib::spawn_future_local(async move {
         let out = path_for(&id);
+        let _ = std::fs::remove_file(legacy_path_for(&id));
         let result = {
             let video = video.clone();
             gio::spawn_blocking(move || generate(&video, &out)).await
@@ -83,7 +94,7 @@ fn generate(video: &Path, out: &Path) -> Result<(), String> {
     let encoder = pick_encoder()?;
     let dir = out.parent().ok_or("no cache directory")?;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let tmp = out.with_extension("part.mkv");
+    let tmp = out.with_extension("part.mp4");
 
     let mut cmd = Command::new("ffmpeg");
     cmd.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
@@ -114,6 +125,7 @@ fn generate(video: &Path, out: &Path) -> Result<(), String> {
         }
     }
     let output = cmd
+        .args(["-movflags", "+faststart"])
         .arg(&tmp)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
