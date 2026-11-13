@@ -38,7 +38,7 @@ pub fn path_for(id: &str) -> PathBuf {
     cache_dir().join("boomerang").join(format!("{id}.mp4"))
 }
 
-/// Where Frontrise 0.5.0 cached clips, in Matroska.
+/// Where early 0.5.0 development builds cached clips, in Matroska.
 fn legacy_path_for(id: &str) -> PathBuf {
     path_for(id).with_extension("mkv")
 }

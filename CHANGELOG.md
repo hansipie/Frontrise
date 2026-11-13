@@ -1,23 +1,18 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-- Boomerang videos froze for about 8 s on every turn. Their clip was cached
-  as Matroska, and GTK's loop hand-over stalls on that container; clips are
-  now MP4 and play smoothly. Clips cached by 0.5.0 are rendered again.
-- Video wallpapers leaked one open file on every loop (GTK's built-in loop
-  reopens the file each turn without closing it): a 5 s clip piled up about
-  700 an hour until Frontrise ran out of file descriptors. Videos now loop by
-  seeking back to the start, which keeps a single file open.
-
 ## 0.5.0 - 2026-11-13
 
 ### Added
 - Videos can play as a boomerang (forward, then backward, forever) instead of
   a plain loop. Pick it per video from the "⋯" menu in the library. The
-  forward-and-back clip is rendered once with `ffmpeg` and cached; until it
-  is ready, or if `ffmpeg` is missing, the video simply loops.
+  forward-and-back clip is rendered once with `ffmpeg` and cached as MP4;
+  until it is ready, or if `ffmpeg` is missing, the video simply loops.
+
+### Fixed
+- Video wallpapers leaked one open file on every loop (GTK's built-in loop
+  reopens the file each turn without closing it): a 5 s clip piled up about
+  700 an hour until Frontrise ran out of file descriptors. Videos now loop by
+  seeking back to the start, which keeps a single file open.
 
 ## 0.4.2 - 2026-11-05
 
