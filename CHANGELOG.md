@@ -6,6 +6,10 @@
 - Boomerang videos froze for about 8 s on every turn. Their clip was cached
   as Matroska, and GTK's loop hand-over stalls on that container; clips are
   now MP4 and play smoothly. Clips cached by 0.5.0 are rendered again.
+- Video wallpapers leaked one open file on every loop (GTK's built-in loop
+  reopens the file each turn without closing it): a 5 s clip piled up about
+  700 an hour until Frontrise ran out of file descriptors. Videos now loop by
+  seeking back to the start, which keeps a single file open.
 
 ## 0.5.0 - 2026-11-13
 

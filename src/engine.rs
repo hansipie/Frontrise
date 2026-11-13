@@ -56,6 +56,8 @@ pub struct Content {
     pub media: Media,
     /// The video file being played (the original, or its boomerang clip).
     file: Option<PathBuf>,
+    /// Restarts the video when it ends (see [`loop_video`]).
+    loop_handler: Option<glib::SignalHandlerId>,
 }
 
 thread_local! {
@@ -65,13 +67,14 @@ thread_local! {
 impl Content {
     fn new(store: &Store, item_id: &str) -> Rc<Self> {
         let mut file = None;
+        let mut loop_handler = None;
         let media = match store.item(item_id) {
             Some(item) if item.is_available() => match item.kind {
                 Kind::Video => {
                     let path = video_file(item);
                     let media = gtk::MediaFile::for_filename(&path);
-                    media.set_loop(true);
                     media.set_muted(true);
+                    loop_handler = Some(loop_video(&media));
                     file = Some(path);
                     Media::Video(media)
                 }
@@ -86,7 +89,7 @@ impl Content {
             _ => Media::Missing,
         };
         let serial = NEXT_SERIAL.with(|n| n.replace(n.get() + 1));
-        Rc::new(Self { serial, item_id: item_id.to_owned(), media, file })
+        Rc::new(Self { serial, item_id: item_id.to_owned(), media, file, loop_handler })
     }
 
     /// A video whose playback mode changed, or whose boomerang clip just
@@ -125,12 +128,31 @@ fn video_file(item: &Item) -> PathBuf {
     original
 }
 
+/// Plays `media` again from the start each time it ends.
+///
+/// GTK's own loop (`set_loop(true)`) hands the same file to GStreamer again
+/// when the clip is about to finish, and that leaks one open file descriptor
+/// per turn: a 5 s wallpaper piles up ~700 of them an hour, until the process
+/// runs out. Seeking back to the start reuses the pipeline and opens nothing.
+fn loop_video(media: &gtk::MediaFile) -> glib::SignalHandlerId {
+    media.connect_ended_notify(|m| {
+        if m.is_ended() {
+            m.seek(0);
+            m.play();
+        }
+    })
+}
+
 /// How long a replaced video stays alive, paused, before it is released.
 const VIDEO_RETIRE_DELAY_MS: u64 = 1500;
 
 impl Drop for Content {
     fn drop(&mut self) {
         if let Media::Video(media) = &self.media {
+            // A video ending while it is retired must not start playing again.
+            if let Some(handler) = self.loop_handler.take() {
+                media.disconnect(handler);
+            }
             retire_video(media.clone());
         }
     }
@@ -145,7 +167,6 @@ impl Drop for Content {
 /// can touch itself after being freed (segfault in `gst_play_main`). Pausing
 /// first and releasing once the pipeline is idle avoids both.
 fn retire_video(media: gtk::MediaFile) {
-    media.set_loop(false);
     media.pause();
     glib::timeout_add_local_once(std::time::Duration::from_millis(VIDEO_RETIRE_DELAY_MS), move || {
         drop(media);
