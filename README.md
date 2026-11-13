@@ -4,7 +4,7 @@
 
 <h1 align="center">Frontrise</h1>
 
-Animated video and shader wallpapers for GNOME (Shell 50 and 51, Wayland).
+Live wallpapers for GNOME (Shell 50 and 51, Wayland).
 
 - **Videos** as wallpapers, on every display, in sync or one per display.
 - **Scenes**: GLSL shaders (Shadertoy-style `mainImage`), three built in
