@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Videos can play as a boomerang (forward, then backward, forever) instead of
+  a plain loop. Pick it per video from the "⋯" menu in the library. The
+  forward-and-back clip is rendered once with `ffmpeg` and cached; until it
+  is ready, or if `ffmpeg` is missing, the video simply loops.
+
 ## 0.4.2 - 2026-11-05
 
 ### Fixed

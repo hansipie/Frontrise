@@ -3,6 +3,7 @@
 mod app;
 mod audio;
 mod autostart;
+mod boomerang;
 mod config;
 mod decoding;
 mod engine;

@@ -12,13 +12,15 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 
 use crate::audio::Audio;
-use crate::config::{Fit, Kind, Source, Store};
+use crate::boomerang;
+use crate::config::{Fit, Item, Kind, Playback, Source, Store};
 use crate::scene::{self, Scene};
 use crate::shellext::{ShellEvent, ShellStatus};
 use crate::state::State;
@@ -52,6 +54,8 @@ pub struct Content {
     serial: u64,
     pub item_id: String,
     pub media: Media,
+    /// The video file being played (the original, or its boomerang clip).
+    file: Option<PathBuf>,
 }
 
 thread_local! {
@@ -60,12 +64,15 @@ thread_local! {
 
 impl Content {
     fn new(store: &Store, item_id: &str) -> Rc<Self> {
+        let mut file = None;
         let media = match store.item(item_id) {
             Some(item) if item.is_available() => match item.kind {
                 Kind::Video => {
-                    let media = gtk::MediaFile::for_filename(item.path.as_ref().unwrap());
+                    let path = video_file(item);
+                    let media = gtk::MediaFile::for_filename(&path);
                     media.set_loop(true);
                     media.set_muted(true);
+                    file = Some(path);
                     Media::Video(media)
                 }
                 Kind::Scene => match item.scene_source() {
@@ -79,7 +86,14 @@ impl Content {
             _ => Media::Missing,
         };
         let serial = NEXT_SERIAL.with(|n| n.replace(n.get() + 1));
-        Rc::new(Self { serial, item_id: item_id.to_owned(), media })
+        Rc::new(Self { serial, item_id: item_id.to_owned(), media, file })
+    }
+
+    /// A video whose playback mode changed, or whose boomerang clip just
+    /// became ready, must be loaded again from the right file.
+    fn is_stale(&self, store: &Store) -> bool {
+        let Some(file) = &self.file else { return false };
+        store.item(&self.item_id).filter(|i| i.is_available()).is_some_and(|i| video_file(i) != *file)
     }
 
     fn set_playing(&self, playing: bool) {
@@ -95,6 +109,20 @@ impl Content {
     fn uses_audio(&self) -> bool {
         matches!(&self.media, Media::Scene(s) if s.uses_audio)
     }
+}
+
+/// The file to play for a video item. A boomerang is a pre-rendered clip
+/// (forward then backward) that simply loops; until it is ready the original
+/// video loops, and its rendering is started in the background.
+fn video_file(item: &Item) -> PathBuf {
+    let original = item.path.clone().unwrap_or_default();
+    if item.playback == Playback::Boomerang {
+        match boomerang::ready(&item.id, &original) {
+            Some(clip) => return clip,
+            None => boomerang::request(&item.id, &original),
+        }
+    }
+    original
 }
 
 /// How long a replaced video stays alive, paused, before it is released.
@@ -159,7 +187,12 @@ impl Player {
     /// Picks up playlist edits; keeps the current item if it is still there.
     /// Returns true if the content changed.
     fn sync(&self, store: &Store) -> bool {
-        let PlayerSource::Playlist(id) = &self.source else { return false };
+        let stale = self.content.borrow().is_stale(store);
+        if stale {
+            let id = self.content.borrow().item_id.clone();
+            *self.content.borrow_mut() = Content::new(store, &id);
+        }
+        let PlayerSource::Playlist(id) = &self.source else { return stale };
         let Some(p) = store.playlist(id) else { return false };
         self.interval_minutes.set(p.interval_minutes);
         let wanted: Vec<String> = playable(store, &p.items, false);

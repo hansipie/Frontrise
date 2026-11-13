@@ -9,7 +9,7 @@ use adw::prelude::*;
 use gtk::{gio, glib};
 
 use crate::app::Ctx;
-use crate::config::{Item, Kind};
+use crate::config::{Item, Kind, Playback};
 use crate::engine;
 use crate::thumbs;
 
@@ -181,6 +181,8 @@ fn card(
         overlay.add_overlay(&badge("Missing file", true));
     } else if item.kind == Kind::Scene {
         overlay.add_overlay(&badge("Scene", false));
+    } else if item.playback == Playback::Boomerang {
+        overlay.add_overlay(&badge("Boomerang", false));
     }
 
     let title = gtk::Label::builder()
@@ -353,6 +355,16 @@ fn menu(item: &Item, playlists: &[crate::config::Playlist], monitors: &[engine::
     let playlist_section = gio::Menu::new();
     playlist_section.append_submenu(Some("Add to Playlist"), &add);
     menu.append_section(None, &playlist_section);
+
+    if item.kind == Kind::Video {
+        let playback = gio::Menu::new();
+        let label = match item.playback {
+            Playback::Loop => "Play as Boomerang (Forward and Back)",
+            Playback::Boomerang => "Play as Loop",
+        };
+        playback.append_item(&entry(label, "win.toggle-boomerang", &item.id));
+        menu.append_section(None, &playback);
+    }
 
     if !item.is_builtin() {
         let remove = gio::Menu::new();

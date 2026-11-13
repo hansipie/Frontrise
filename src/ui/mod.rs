@@ -13,7 +13,7 @@ use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 
 use crate::app::Ctx;
-use crate::config::{install_stamp, Source};
+use crate::config::{install_stamp, Playback, Source};
 use crate::engine;
 use crate::shellext::{self, ShellEvent, ShellStatus};
 use crate::APP_ID;
@@ -361,6 +361,17 @@ fn add_window_actions(ctx: &Rc<Ctx>, window: &adw::ApplicationWindow) {
         });
     });
     let c = ctx.clone();
+    string_action(window, "toggle-boomerang", move |id| {
+        c.state.modify(|s| {
+            if let Some(i) = s.item_mut(&id) {
+                i.playback = match i.playback {
+                    Playback::Loop => Playback::Boomerang,
+                    Playback::Boomerang => Playback::Loop,
+                };
+            }
+        });
+    });
+    let c = ctx.clone();
     string_action(window, "remove-item", move |id| {
         let title = c.state.store.borrow().item(&id).map(|i| i.title.clone()).unwrap_or_default();
         let c2 = c.clone();
@@ -371,6 +382,7 @@ fn add_window_actions(ctx: &Rc<Ctx>, window: &adw::ApplicationWindow) {
             "Remove",
             move || {
                 let _ = std::fs::remove_file(crate::thumbs::path_for(&id));
+                crate::boomerang::remove(&id);
                 c2.state.modify(|s| s.remove_item(&id));
             },
         );

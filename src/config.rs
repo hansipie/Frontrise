@@ -20,6 +20,23 @@ pub enum Kind {
     Scene,
 }
 
+/// How a video repeats.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Playback {
+    /// Plays from the start again each time it ends.
+    #[default]
+    Loop,
+    /// Plays forward, then backward, and so on.
+    Boomerang,
+}
+
+impl Playback {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub id: String,
@@ -34,6 +51,9 @@ pub struct Item {
     pub builtin: Option<String>,
     #[serde(default)]
     pub favorite: bool,
+    /// How a video repeats (ignored by scenes).
+    #[serde(default, skip_serializing_if = "Playback::is_default")]
+    pub playback: Playback,
 }
 
 impl Item {
@@ -244,6 +264,7 @@ impl Store {
                         path: None,
                         builtin: Some(key.to_owned()),
                         favorite: false,
+                        playback: Playback::default(),
                     },
                 );
             }
@@ -312,6 +333,7 @@ impl Store {
             path: Some(path),
             builtin: None,
             favorite: false,
+            playback: Playback::default(),
         });
         Some(id)
     }
